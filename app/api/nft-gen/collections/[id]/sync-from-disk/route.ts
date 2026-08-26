@@ -22,15 +22,21 @@ async function apiPost(token: string, path: string, body: unknown) {
   return await r.json();
 }
 
-function inferTier(stem: string): string {
+// Only matches when the filename itself genuinely spells out a tier — real
+// trait file stems essentially never do, so this returns null far more often
+// than not. That's correct: rarity_tier is nullable specifically to mean
+// "nobody classified this yet", which must fall through to the app's live
+// weight-based display instead of being silently forced to "common".
+function inferTier(stem: string): string | null {
   const s = stem.toLowerCase();
   if (s.includes("legendary")) return "legendary";
   if (s.includes("epic"))      return "epic";
   if (s.includes("rare"))      return "rare";
-  return "common";
+  if (s.includes("common"))    return "common";
+  return null;
 }
 
-interface ManifestAsset { stem: string; name?: string; rel?: string | null; defaultWeight?: number; }
+interface ManifestAsset { stem: string; name?: string; rel?: string | null; defaultWeight?: number; rarityTier?: string; }
 interface ManifestLayer { folder: string; label?: string; count?: number; optional?: boolean; assets: ManifestAsset[]; }
 
 async function syncOneLayer(token: string, collectionId: string, ml: ManifestLayer, layerIdx: number) {
@@ -63,7 +69,11 @@ async function syncOneLayer(token: string, collectionId: string, ml: ManifestLay
       // always naming traits after their raw file code (e.g. "1-16").
       name:            asset.name ?? asset.stem,
       filePath:        asset.rel,
-      rarityTier:      inferTier(asset.stem),
+      // asset.rarityTier reflects the artist's own Excel-supplied "Rarity"
+      // column when one matched (see CollectionSetup.tsx parseTraitNamesFromWorkbook)
+      // — trust her stated classification over guessing from the filename,
+      // which almost never contains a tier word like "rare" to begin with.
+      rarityTier:      asset.rarityTier ?? inferTier(asset.stem),
       storageProvider: "filebase",
       // asset.defaultWeight reflects the artist's Excel-supplied weight when
       // one matched — this was never sent here at all before, so even a

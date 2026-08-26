@@ -37,6 +37,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   const [svrResumeFrom,  setSvrResumeFrom]  = useState(0);
   const [bucketList,     setBucketList]     = useState<string[]>([]);
   const [bucketsLoading, setBucketsLoading] = useState(false);
+  const [bucketsError,   setBucketsError]   = useState('');
   const [svrStatus,   setSvrStatus]   = useState<'idle'|'running'|'done'|'error'>('idle');
   const [svrProgress, setSvrProgress] = useState(0);
   const [svrTotal,    setSvrTotal]    = useState(0);
@@ -103,11 +104,15 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   }, [collectionId, (layersProp as any[]).length, layers.length]);
 
   // ── Load Filebase bucket list for export dropdown ────────────────────────
-  useEffect(() => {
+  function loadBuckets() {
     let cancelled = false;
     setBucketsLoading(true);
+    setBucketsError('');
     fetch('/api/filebase/buckets')
-      .then(r => r.ok ? r.json() : { buckets: [] })
+      .then(r => {
+        if (!r.ok) throw new Error(`Failed to load buckets (HTTP ${r.status})`);
+        return r.json();
+      })
       .then(data => {
         if (cancelled) return;
         const names: string[] = (data.buckets ?? []).map((b: any) => b.name).filter(Boolean);
@@ -120,11 +125,18 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         // so the admin must explicitly pick one every time — Start Export
         // stays disabled (see `disabled={!svrBucket.trim()}` below) until they do.
       })
-      .catch(() => {})
+      .catch((e: any) => {
+        if (cancelled) return;
+        // A failed/timed-out fetch used to leave bucketList silently empty,
+        // rendering the exact same "no buckets found" the dropdown shows when
+        // the account genuinely has zero buckets — an admin has no way to
+        // tell "nothing to select" apart from "this failed, try again."
+        setBucketsError(e?.message ?? 'Failed to load buckets — check your connection and retry.');
+      })
       .finally(() => { if (!cancelled) setBucketsLoading(false); });
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
+  useEffect(() => loadBuckets(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-restore done state from DB on mount ─────────────────────────────
   useEffect(() => {
@@ -418,6 +430,12 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           if (svrGenPollRef.current) { clearInterval(svrGenPollRef.current); svrGenPollRef.current = null; }
           setSvrGenStatus('error');
           setSvrGenError(pr.error ?? 'Generation failed');
+          if (/collection not found/i.test(pr.error ?? '')) {
+            // The collection backing this job was deleted from elsewhere while
+            // generation was in flight — clear the stale cookie so a reload
+            // lands on a fresh Settings tab instead of the same dead end.
+            fetch('/api/session/collection', { method: 'DELETE' }).catch(() => {});
+          }
         }
       }, 2000);
     } catch (e: any) {
@@ -979,6 +997,13 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
               <div className="exp-fb-bucket-row" style={{ flexWrap: 'wrap', gap: 8 }}>
                 {bucketsLoading ? (
                   <span style={{ fontSize: 13, color: 'var(--muted)' }}>Loading buckets…</span>
+                ) : bucketsError ? (
+                  <>
+                    <span style={{ fontSize: 13, color: '#ef4444' }}>⚠ {bucketsError}</span>
+                    <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: '3px 10px' }} onClick={loadBuckets}>
+                      ↺ Retry
+                    </button>
+                  </>
                 ) : (
                   <select
                     className="exp-fb-input"

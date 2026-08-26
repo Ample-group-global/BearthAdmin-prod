@@ -164,11 +164,16 @@ const ddRow: React.CSSProperties = {
   cursor: 'pointer', fontSize: 12.5, color: 'var(--muted)',
 };
 
-export default function RulesTabContent({ layer, layers, rules: initialRules, onChange, compact = false }) {
+export default function RulesTabContent({ layer, layers, rules: initialRules, onChange, saveError = '', compact = false }) {
   const [rules, setRules]         = useState(() => normalizeRules(initialRules));
   const [ruleType, setRuleType]   = useState<'exclude' | 'force'>('force');
   const [ifTrait, setIfTrait]     = useState('');
   const [thenKeys, setThenKeys]   = useState<string[]>([]);
+
+  // The parent rolls `rules`/`initialRules` back to the last-known-saved value
+  // when a save fails (see saveConflicts in page.tsx) — resync local state so
+  // this list never keeps showing a rule that didn't actually persist to the DB.
+  useEffect(() => { setRules(normalizeRules(initialRules)); }, [initialRules]);
 
   const getLabel     = (folder) => layers.find(l => l.folder === folder)?.label ?? folder;
   const getTraitName = (folder, stem) => {
@@ -244,6 +249,11 @@ export default function RulesTabContent({ layer, layers, rules: initialRules, on
           <button data-testid="rt-add-rule" className="btn btn-primary" disabled={!ifTrait || thenKeys.length === 0} onClick={addRule} style={{ whiteSpace: 'nowrap' }}>Add Rule</button>
           <button data-testid="rt-delete-all" className="btn btn-ghost" onClick={deleteAll} style={{ whiteSpace: 'nowrap' }}>Delete All</button>
         </div>
+        {saveError && (
+          <div data-testid="rt-save-error" style={{ fontSize: 12.5, color: '#ef4444', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6, padding: '6px 10px', marginBottom: 12 }}>
+            ⚠ {saveError}
+          </div>
+        )}
       </div>
 
       {/* Scrollable rules list — fills remaining space */}

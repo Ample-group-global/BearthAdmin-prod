@@ -5,8 +5,24 @@ export const dynamic = 'force-dynamic';
 const API_BASE = process.env.BEARTH_API_URL ?? 'http://localhost:4000';
 
 async function toThumbnail(input: string | Buffer, w: number, h: number): Promise<Buffer> {
-  return sharp(input, { failOn: 'none' })
-    .trim({ threshold: 10 })
+  const src = sharp(input, { failOn: 'none' });
+  const meta = await src.metadata();
+  const origW = meta.width ?? 0, origH = meta.height ?? 0;
+
+  // trim() removes uniform "background" margins around real artwork, but a
+  // trait that's itself a flat solid-color fill (e.g. a plain background
+  // swatch with no edges anywhere) has nothing for it to distinguish from
+  // padding — it collapses the whole image down to a sliver, which then
+  // renders as an almost-empty thumbnail. Traits are user-supplied art of any
+  // kind, so trimming can never assume every image has real transparent
+  // margins to remove; only keep the trim if it left a substantial image.
+  let pipeline = sharp(input, { failOn: 'none' }).trim({ threshold: 10 });
+  const trimmedMeta = await pipeline.clone().metadata();
+  const trimW = trimmedMeta.width ?? 0, trimH = trimmedMeta.height ?? 0;
+  const keptEnough = origW > 0 && origH > 0 && (trimW * trimH) >= (origW * origH) * 0.05;
+  if (!keptEnough) pipeline = sharp(input, { failOn: 'none' });
+
+  return pipeline
     .resize(w, h, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer();

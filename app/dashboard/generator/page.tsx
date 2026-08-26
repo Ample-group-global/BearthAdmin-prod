@@ -11,7 +11,7 @@ import RarityModal from './components/RarityModal';
 import RarityTab from './components/RarityTab';
 import { LayerFilesProvider } from './LayerFilesContext';
 
-interface LayerAsset { id?: string; stem: string; defaultWeight?: number; rel?: string; }
+interface LayerAsset { id?: string; stem: string; name?: string; defaultWeight?: number; rel?: string; }
 interface Layer { id?: string; folder: string; count: number; assets: LayerAsset[]; optional?: boolean; }
 type Weights = Record<string, Record<string, number>>;
 type ConflictRule = Record<string, unknown>;
@@ -35,6 +35,8 @@ export default function Page() {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState('');
   const [sessionRestored, setSessionRestored] = useState(false);
+  const [conflictSaveError, setConflictSaveError] = useState('');
+  const [weightSaveError, setWeightSaveError] = useState('');
   const [layers, setLayers] = useState<Layer[]>([]);
   const [weights, setWeights] = useState<Weights>({});
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
@@ -110,7 +112,17 @@ export default function Page() {
           .then(r => r.ok ? r.json() : null)
           .then(data => {
             const c = data?.collection ?? data;
-            if (!c?.id) return;
+            if (!c?.id) {
+              // The collection this browser had cached no longer exists in the
+              // DB (deleted from elsewhere) — clear the stale cookie and reset
+              // to a fresh Settings tab instead of leaving the summary card and
+              // Generate button showing dead data that fails on every click.
+              fetch('/api/session/collection', { method: 'DELETE' }).catch(() => {});
+              setCollectionId(null);
+              setSessionRestored(false);
+              setCollection(DEFAULT_COLLECTION);
+              return;
+            }
             setCollection(prev => ({
               ...prev,
               name:        c.name        ?? prev.name,
@@ -189,19 +201,63 @@ export default function Page() {
       body: JSON.stringify(
         value > 0 ? { rarityWeight: Math.max(1, Math.round(value)), isActive: true } : { isActive: false }
       ),
-    }).then(res => {
-      if (!res.ok) throw new Error(`PUT /api/nft-gen/traits/${traitId} failed (${res.status})`);
-    }).catch(err => console.error('Rarity weight save failed:', err));
+    }).then(async res => {
+      if (!res.ok) {
+        // Surface the server's actual reason — a validation rejection isn't
+        // a network problem, and lumping both under one generic message
+        // hides which one actually happened.
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? `PUT /api/nft-gen/traits/${traitId} failed (${res.status})`);
+      }
+    }).catch(err => {
+      // A failed save here used to only log to the console — the slider/tier
+      // value stayed optimistically updated on screen with zero indication
+      // it never actually persisted, which reads as "sometimes my selection
+      // just doesn't take" with no way to tell why.
+      console.error('Rarity weight save failed:', err);
+      const asset = layers.find(l => l.folder === folder)?.assets.find((a: LayerAsset) => a.stem === stem);
+      setWeights(prev => {
+        if (asset?.defaultWeight == null) return prev;
+        return { ...prev, [folder]: { ...prev[folder], [stem]: asset.defaultWeight } };
+      });
+      // Full technical detail stays in the console for debugging — the
+      // artist-facing message stays plain, and names the trait by its
+      // display name rather than the raw file stem she never sees elsewhere.
+      setWeightSaveError(`Couldn't save the rarity change for "${asset?.name ?? stem}". Please try again.`);
+    });
   }, [layers]);
 
   async function saveConflicts(rules: ConflictRule[]) {
+    const prevConflicts = conflicts;
     setConflicts(rules);
     if (!collectionId) return;
-    await fetch(`/api/nft-gen/collections/${collectionId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conflictRules: rules }),
-    }).catch(() => { });
+    setConflictSaveError('');
+    try {
+      const r = await fetch(`/api/nft-gen/collections/${collectionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conflictRules: rules }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        // Roll back the optimistic UI update — a rule that only "looks" saved
+        // is worse than one that visibly failed, since the artist would have
+        // no way to know it never persisted. The raw backend reason goes to
+        // the console for debugging; what she sees stays plain and calm.
+        console.error(`[saveConflicts] rule save failed (${r.status}):`, d.error);
+        setConflicts(prevConflicts);
+        setConflictSaveError("Couldn't save this rule. Please try again.");
+        if (r.status === 404) {
+          fetch('/api/session/collection', { method: 'DELETE' }).catch(() => {});
+          setCollectionId(null);
+          setSessionRestored(false);
+          setCollection(DEFAULT_COLLECTION);
+        }
+      }
+    } catch {
+      setConflicts(prevConflicts);
+      setConflictSaveError('Rule save failed — check your connection and try again.');
+    }
   }
 
   async function handleToggleOptional(folder: string, optional: boolean) {
@@ -491,6 +547,9 @@ export default function Page() {
               conflicts={conflicts}
               focusStem={gearFocusStem}
               onSaveConflicts={saveConflicts}
+              conflictSaveError={conflictSaveError}
+              weightSaveError={weightSaveError}
+              onDismissWeightSaveError={() => setWeightSaveError('')}
               onSaveLayerMeta={(meta: { displayName?: string; layerRarityPct?: number }) => handleSaveLayerMeta(gearFolder, meta)}
               onRenameTrait={handleRenameTrait}
               onSave={(newWs: Record<string, number>) => {

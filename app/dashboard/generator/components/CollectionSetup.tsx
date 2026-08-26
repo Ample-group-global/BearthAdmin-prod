@@ -29,16 +29,35 @@ function parseWeightCell(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+// Any spelling/casing of the app's own four tiers — matched loosely since an
+// artist's sheet is free-text, not a constrained dropdown on her end.
+const VALID_RARITY_LABELS = ['legendary', 'epic', 'rare', 'common'];
+function parseRarityCell(v) {
+  const s = String(v ?? '').trim().toLowerCase();
+  return VALID_RARITY_LABELS.includes(s) ? s : null;
+}
+
 function parseTraitNamesFromWorkbook(workbook) {
   const result = {};
   const resultWeights = {};
+  const resultRarities = {};
   for (const sheetName of workbook.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' });
+    // raw: false — a weight cell the artist formatted as an Excel percentage
+    // (not typed as text) stores its underlying value as a fraction (2.78%
+    // is stored as 0.0278); reading raw would silently import a ~100x-wrong
+    // weight for that one cell. raw: false always returns the same formatted
+    // display string ("2.78%") regardless of how the cell was entered, so
+    // weight/name/rarity all parse consistently either way.
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
     if (!rows.length) continue;
     const header = rows[0].map(h => String(h || '').trim().toLowerCase());
     const nameColIdx = header.findIndex(h => h.includes('name'));
     if (nameColIdx === -1) continue; // no name-like column on this sheet — not a trait sheet
     const weightColIdx = header.findIndex(h => h.includes('weight'));
+    // "rarity" alone, not "rarityweight" etc. — the weight column above
+    // already covers anything with "weight" in it, so this only matches a
+    // separate classification column (e.g. "Rarity", "Rarity Tier").
+    const rarityColIdx = header.findIndex(h => h.includes('rarity') && !h.includes('weight'));
     // Stop at the first fully-blank row rather than skipping over it — a
     // mid-sheet blank row silently shifts every later name onto the wrong
     // trait (count still "matches" if we just filtered blanks out, since the
@@ -48,12 +67,14 @@ function parseTraitNamesFromWorkbook(workbook) {
     // to apply anything rather than silently mislabeling traits.
     const names = [];
     const weights = [];
+    const rarities = [];
     for (const r of rows.slice(1)) {
       if (!r.some(c => String(c ?? '').trim() !== '')) break;
       const name = String(r[nameColIdx] ?? '').trim();
       if (!name) break;
       names.push(name);
       weights.push(weightColIdx === -1 ? null : parseWeightCell(r[weightColIdx]));
+      rarities.push(rarityColIdx === -1 ? null : parseRarityCell(r[rarityColIdx]));
     }
     if (names.length) {
       const key = normalizeLayerKey(sheetName);
@@ -62,9 +83,14 @@ function parseTraitNamesFromWorkbook(workbook) {
       // filled weight column is more likely a data-entry gap than intentional,
       // and applying nulls would silently reset those traits to default.
       if (weights.length && weights.every(w => w != null)) resultWeights[key] = weights;
+      // Same guard for rarity — a row with unrecognized text (parseRarityCell
+      // returned null) is more likely a typo than "leave this one live-computed",
+      // and applying the rest positionally around a hole would misalign every
+      // trait after it.
+      if (rarities.length && rarities.every(t => t != null)) resultRarities[key] = rarities;
     }
   }
-  return { names: result, weights: resultWeights };
+  return { names: result, weights: resultWeights, rarities: resultRarities };
 }
 
 function deriveLabelFromFolder(fname) {
@@ -102,9 +128,10 @@ function clientGetName(folder, stem, rel) {
 // many rows as that layer has traits; otherwise falls back to the existing
 // stem-derived placeholder name / default weight of 1, same as when no Excel
 // is provided.
-function parseLayersFromFiles(files, excelData = {}) {
+function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
   const excelNames = excelData.names ?? {};
   const excelWeights = excelData.weights ?? {};
+  const excelRarities = excelData.rarities ?? {};
   const groups = new Map(); // folder -> [{ file, stem, rel }]
   const fileMap = new Map(); // rel -> File
 
@@ -116,7 +143,11 @@ function parseLayersFromFiles(files, excelData = {}) {
     if (!file.name.match(/\.(png|webp|jpg|jpeg|gif)$/i)) continue;
 
     const layerName = parts[layerIdx];
-    const rel = parts.slice(layerIdx).join('/');
+    // Every drop gets its own storage namespace (sessionPrefix) so this
+    // upload's keys can never collide with — or be silently clobbered by —
+    // any other collection's or test run's identically-named layer folders
+    // in the shared bucket. See handleFolderUpload for where this is minted.
+    const rel = sessionPrefix ? `${sessionPrefix}/${parts.slice(layerIdx).join('/')}` : parts.slice(layerIdx).join('/');
     const stem = file.name.replace(/\.(png|webp|jpg|jpeg|gif)$/i, '');
 
     if (!groups.has(layerName)) groups.set(layerName, []);
@@ -155,6 +186,10 @@ function parseLayersFromFiles(files, excelData = {}) {
     const weightsForLayer = excelWeights[layerKey];
     if (weightsForLayer && weightsForLayer.length === assets.length) {
       assets.forEach((a, i) => { a.defaultWeight = weightsForLayer[i]; });
+    }
+    const raritiesForLayer = excelRarities[layerKey];
+    if (raritiesForLayer && raritiesForLayer.length === assets.length) {
+      assets.forEach((a, i) => { a.rarityTier = raritiesForLayer[i]; });
     }
 
     // Disambiguate duplicate display names (same logic as server-side buildCache)
@@ -229,14 +264,31 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
   const [uploadDone,    setUploadDone]    = useState(false);
   const [uploadMsg,     setUploadMsg]     = useState('');
   const [uploadFailedLayers, setUploadFailedLayers] = useState<string[]>([]);
+  // Tracks the REAL background S3 upload — separate from uploadDone, which
+  // flips true the instant files are parsed client-side (for a snappy UI)
+  // long before doServerUpload() below has actually finished. Continuing
+  // past Settings while this is still 'uploading' let a real generation run
+  // against layers whose images never made it to Filebase — the compositor
+  // then silently rendered whatever stale object already sat at that S3 key
+  // instead of failing loudly. 'idle' means no folder has been dropped yet
+  // (layers are optional at this stage), so it must not block Save & Continue.
+  const [serverUploadStatus, setServerUploadStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
   const [errors,        setErrors]        = useState({});
-  const [excelData,     setExcelData]     = useState({ names: {}, weights: {} });
+  const [excelData,     setExcelData]     = useState({ names: {}, weights: {}, rarities: {} });
   const [excelFileName, setExcelFileName] = useState('');
   const [excelMsg,      setExcelMsg]      = useState('');
   const folderRef = useRef(null);
   const excelRef  = useRef(null);
   const lastFilesRef = useRef(null); // remembers the dropped image files so a
                                       // later-uploaded Excel can re-apply names
+  const sessionPrefixRef = useRef(''); // the unique storage namespace minted for
+                                        // the current drop — a later Excel-driven
+                                        // re-parse of the same files must reuse
+                                        // this exact value, or the re-parsed
+                                        // `rel`s silently drop the prefix and no
+                                        // longer match where the files actually
+                                        // live in storage (every trait then 404s
+                                        // at generation/export time).
   const { storeFiles } = useLayerFiles();
 
   const set = (k, v) => {
@@ -269,8 +321,12 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     setUploadMsg('Reading files…');
     lastFilesRef.current = files;
 
+    // A fresh, unique namespace for THIS drop — see parseLayersFromFiles.
+    const sessionPrefix = `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    sessionPrefixRef.current = sessionPrefix;
+
     // ── 1. Parse layers client-side — instant ────────────────────────────────
-    const { layers: parsedLayers, fileMap } = parseLayersFromFiles(files, excelData);
+    const { layers: parsedLayers, fileMap } = parseLayersFromFiles(files, excelData, sessionPrefix);
     storeFiles(fileMap);
     onLayersChange?.(parsedLayers);
 
@@ -278,6 +334,7 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     setUploading(false);
     setUploadDone(true);
     setUploadFailedLayers([]);
+    setServerUploadStatus('idle');
     setUploadMsg(`${parsedLayers.length} layers imported!`);
 
     // ── 2. Upload to S3 in the background, but await + verify each layer ───────
@@ -289,6 +346,7 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     // anywhere. Now every layer's result is checked and failures surface in
     // the UI instead of vanishing.
     const doServerUpload = async () => {
+      setServerUploadStatus('uploading');
       const groups: Record<string, { file: File; subpath: string }[]> = {};
       for (const file of files) {
         if (!file.type.startsWith('image/') && !file.name.match(/\.(png|jpg|jpeg|gif|webp|svg)$/i)) continue;
@@ -300,35 +358,73 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
         if (!groups[layerName]) groups[layerName] = [];
         groups[layerName].push({ file, subpath });
       }
-      if (Object.keys(groups).length === 0) return;
+      if (Object.keys(groups).length === 0) { setServerUploadStatus('idle'); return; }
 
-      // Each layer's stale files are cleaned up server-side, scoped to that
-      // layer's own prefix, only after its new files finish uploading
-      // successfully — see /upload route. No blanket bucket wipe here: that
-      // used to run unconditionally before every drop and could empty the
-      // shared bucket for everyone if an upload failed partway through.
-      const results = await Promise.allSettled(
-        Object.entries(groups).map(async ([layer, entries]) => {
+      // Large layers are split into byte-bounded chunks — a single request
+      // carrying an entire big layer (e.g. 50+ trait PNGs) can exceed typical
+      // serverless request-body limits and fail outright, even though nothing
+      // about the layer itself is invalid. This budget stays safely under the
+      // smallest common platform default (4.5MB) regardless of how large a
+      // future layer set gets, so upload reliability never depends on a
+      // particular collection's file sizes or count.
+      const CHUNK_BYTE_BUDGET = 3 * 1024 * 1024;
+      const totalFiles = Object.values(groups).reduce((n, e) => n + e.length, 0);
+      let uploadedSoFar = 0;
+      setUploadMsg(`Saving assets to storage… 0/${totalFiles} files`);
+
+      async function uploadLayerChunked(layer: string, entries: { file: File; subpath: string }[]) {
+        const chunks: typeof entries[] = [];
+        let cur: typeof entries = [], curBytes = 0;
+        for (const entry of entries) {
+          if (cur.length && curBytes + entry.file.size > CHUNK_BYTE_BUDGET) { chunks.push(cur); cur = []; curBytes = 0; }
+          cur.push(entry); curBytes += entry.file.size;
+        }
+        if (cur.length) chunks.push(cur);
+
+        const keptKeys: string[] = [];
+        for (const chunk of chunks) {
           const form = new FormData();
           form.append('layer', layer);
-          for (const { file, subpath } of entries) {
+          form.append('sessionPrefix', sessionPrefix);
+          for (const { file, subpath } of chunk) {
             form.append('files', file);
             form.append('subpaths', subpath);
           }
           const res = await fetch('/api/upload', { method: 'POST', body: form });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json().catch(() => ({}));
-          if (data.s3Uploaded?.length !== entries.length) {
-            throw new Error(`only ${data.s3Uploaded?.length ?? 0}/${entries.length} files uploaded`);
+          if (data.s3Uploaded?.length !== chunk.length) {
+            throw new Error(`only ${data.s3Uploaded?.length ?? 0}/${chunk.length} files uploaded`);
           }
-          return layer;
-        }),
+          keptKeys.push(...data.s3Uploaded);
+          uploadedSoFar += chunk.length;
+          setUploadMsg(`Saving assets to storage… ${uploadedSoFar}/${totalFiles} files`);
+        }
+
+        // Stale-file cleanup only runs once every chunk for this layer has
+        // landed — see /upload/finalize. Best-effort: the upload itself
+        // already succeeded above, so a cleanup hiccup shouldn't fail the drop.
+        await fetch('/api/upload/finalize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ layer, sessionPrefix, keptKeys }),
+        }).catch(() => {});
+
+        return layer;
+      }
+
+      const results = await Promise.allSettled(
+        Object.entries(groups).map(([layer, entries]) => uploadLayerChunked(layer, entries)),
       );
 
       const failed = Object.keys(groups).filter((_, i) => results[i].status === 'rejected');
       if (failed.length) {
         console.error('[upload] layer(s) failed to upload to S3:', failed);
         setUploadFailedLayers(failed);
+        setServerUploadStatus('error');
+      } else {
+        setUploadMsg(`${parsedLayers.length} layers imported!`);
+        setServerUploadStatus('done');
       }
     };
     doServerUpload();
@@ -348,6 +444,7 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
       const data = parseTraitNamesFromWorkbook(wb);
       const matchedSheets = Object.keys(data.names).length;
       const weightSheets = Object.keys(data.weights).length;
+      const raritySheets = Object.keys(data.rarities).length;
       setExcelData(data);
       setExcelFileName(file.name);
       if (!matchedSheets) {
@@ -355,16 +452,17 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
         return;
       }
       if (lastFilesRef.current) {
-        const { layers: parsedLayers } = parseLayersFromFiles(lastFilesRef.current, data);
+        const { layers: parsedLayers } = parseLayersFromFiles(lastFilesRef.current, data, sessionPrefixRef.current);
         onLayersChange?.(parsedLayers);
         const appliedCount = parsedLayers.reduce((n, l) => {
           const layerNames = data.names[normalizeLayerKey(l.folder)];
           return n + (layerNames && layerNames.length === l.assets.length ? l.assets.length : 0);
         }, 0);
         const weightNote = weightSheets ? `, weights applied for ${weightSheets} layer(s)` : '';
-        setExcelMsg(`${matchedSheets} sheet(s) matched, ${appliedCount} trait name(s) applied${weightNote}.`);
+        const rarityNote = raritySheets ? `, rarity applied for ${raritySheets} layer(s)` : '';
+        setExcelMsg(`${matchedSheets} sheet(s) matched, ${appliedCount} trait name(s) applied${weightNote}${rarityNote}.`);
       } else {
-        setExcelMsg(`${matchedSheets} sheet(s) read — names/weights will apply once you drop the layer folder.`);
+        setExcelMsg(`${matchedSheets} sheet(s) read — names/weights/rarity will apply once you drop the layer folder.`);
       }
     } catch (err) {
       console.error('[excel] parse failed:', err);
@@ -569,6 +667,8 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
             </div>
             <div
               className={`setup-drop-zone${dragOver ? ' drag-over' : ''}${uploadDone ? ' done' : ''}`}
+              data-testid="setup-drop-zone"
+              data-server-upload-status={serverUploadStatus}
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
@@ -578,6 +678,18 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
                 <>
                   <div className="setup-drop-icon"><div className="spinner" /></div>
                   <div className="setup-drop-label">{uploadMsg || 'Uploading…'}</div>
+                </>
+              ) : uploadDone && serverUploadStatus === 'uploading' ? (
+                <>
+                  <div className="setup-drop-icon"><div className="spinner" /></div>
+                  <div className="setup-drop-label">{uploadMsg || 'Saving assets to storage…'}</div>
+                  <div className="setup-drop-sub">Layers are previewed below, but generation needs this to finish first</div>
+                </>
+              ) : uploadDone && serverUploadStatus === 'error' ? (
+                <>
+                  <div className="setup-drop-icon">⚠</div>
+                  <div className="setup-drop-label">Some layers failed to save</div>
+                  <div className="setup-drop-sub">Drop the folder again to retry</div>
                 </>
               ) : uploadDone ? (
                 <>
@@ -657,11 +769,15 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
 
           <button
             className="btn btn-primary btn-lg setup-continue-btn"
+            data-testid="setup-continue-btn"
             onClick={handleSubmit}
-            disabled={syncing}
+            disabled={syncing || serverUploadStatus === 'uploading' || uploadFailedLayers.length > 0}
+            title={serverUploadStatus === 'uploading' ? 'Assets are still saving to storage — wait for this to finish.' : uploadFailedLayers.length > 0 ? 'Some layers failed to save — drop the folder again to retry.' : undefined}
           >
             {syncing ? (
               <><span className="spinner" style={{width:14,height:14,marginRight:6}} />Saving to database…</>
+            ) : serverUploadStatus === 'uploading' ? (
+              <><span className="spinner" style={{width:14,height:14,marginRight:6}} />Saving assets to storage…</>
             ) : 'Save & Continue'}
           </button>
           <div className="setup-footer-links">

@@ -104,12 +104,22 @@ export default function SyncStatusPage() {
       }
       const { exportId } = await r.json();
       const key = `${collectionId}:fb`;
+      let tick = 0;
       pollRefs.current[key] = setInterval(async () => {
         try {
           const pr = await fetch(`/api/nft-gen/export/${exportId}`);
           if (!pr.ok) return;
           const state = await pr.json();
           patchRow(collectionId, { message: state.phase ?? '' });
+          // The phase text above updates every tick, but the numeric "X / Y"
+          // badge comes from a separate DB-aggregate count that otherwise
+          // only refreshes once the whole export finishes — during a long
+          // 2,500+ item export that left the badge frozen at its starting
+          // value the entire time, making a genuinely-progressing export
+          // look stalled. Refresh that count periodically too (not every
+          // tick — this hits the DB for every collection, not just this row).
+          tick++;
+          if (tick % 3 === 0) fetchStatus();
           if (state.status === 'done' || state.status === 'error') {
             clearInterval(pollRefs.current[key]);
             delete pollRefs.current[key];
@@ -117,7 +127,7 @@ export default function SyncStatusPage() {
               filebase: state.status === 'done' ? 'done' : 'error',
               message:  state.status === 'done' ? `${state.total ?? 0} NFTs uploaded` : (state.error ?? 'Export failed'),
             });
-            if (state.status === 'done') fetchStatus();
+            fetchStatus();
           }
         } catch { /* retry next tick */ }
       }, 2000);

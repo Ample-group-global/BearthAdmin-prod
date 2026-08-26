@@ -6,6 +6,17 @@ import { calcRarity, positionForProb } from '../../../../lib/studio/probability'
 import { useLayerFiles } from '../LayerFilesContext';
 import RulesTabContent from './RulesTabContent';
 
+// The badge shown for a trait prefers, in order: a manual override picked
+// from this session's dropdown, the artist's own Excel-supplied "Rarity"
+// column, then finally the live weight-vs-total computation everything used
+// to always use. Percentage (%) always stays live — only the discrete tier
+// label/color can come from an authored source instead of being recomputed.
+function resolveTier(explicitTierLabel, liveTier) {
+  if (!explicitTierLabel) return liveTier;
+  const match = TIERS.find(t => t.label.toLowerCase() === explicitTierLabel.toLowerCase());
+  return match ?? liveTier;
+}
+
 // Target probability for each tier's "quick assign" preset, derived from the
 // same TIERS thresholds the live tier badge uses — so picking a tier from the
 // dropdown always lands back in that same tier once weight is recomputed,
@@ -23,33 +34,125 @@ function targetProbForTier(tierLabel: string): number {
 
 export default function RarityModal({
   layer, weights, supply, onSave, onDelete, onClose,
-  allLayers, conflicts, onSaveConflicts, onSaveLayerMeta, onRenameTrait, focusStem,
+  allLayers, conflicts, onSaveConflicts, conflictSaveError, onSaveLayerMeta, onRenameTrait, focusStem,
+  weightSaveError, onDismissWeightSaveError,
 }) {
   // Local state for weights - starts from parent weights
   const [localWs, setLocalWs] = useState<Record<string, number>>(() => ({ ...weights }));
   const { getBlobUrl } = useLayerFiles();
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Picking a tier from the dropdown is a "quick assign" — it solves for the
-  // weight that lands this trait's probability inside the chosen tier's band,
-  // given every other trait's current weight, then lets the same live
-  // getTier()/calcRarity() computation the tier badges already use confirm
-  // it landed there. No separate tier value is stored or tracked locally:
-  // the badge and the dropdown are always reading the same derived number,
-  // so they can never disagree the way a cached DB label could.
+  // A trait's badge normally shows the artist's own Excel-supplied "Rarity"
+  // column (asset.rarityTier), trusting her stated classification over a
+  // fresh weight computation that can land in a different band on the app's
+  // own thresholds. Picking a tier from the dropdown still works the same
+  // way it always has — it solves for the weight that lands this trait's
+  // live probability inside the chosen band — but that pick must also win
+  // immediately over whatever asset.rarityTier says, or her own manual
+  // choice would look like it silently reverted. This map holds exactly
+  // that: an explicit-pick override, keyed by stem, cleared only by a fresh
+  // Excel import (which re-supplies layer.assets with a new rarityTier).
+  const [localTierOverrides, setLocalTierOverrides] = useState<Record<string, string>>({});
   async function applyTier(asset, tierName: string) {
     // "Disabled" isn't a weight band to solve for — it just means weight 0,
     // same as toggling the row off via its enable radio.
-    const weight = tierName === DISABLED_TIER.label
+    // rarity_weight is an INTEGER column — a fractional value (this used to
+    // round to 2 decimal places, e.g. 23.57) fails the DB call outright with
+    // a raw type error the generic 500 handler then hides behind "something
+    // went wrong on the server", with no hint at the real cause.
+    let weight = tierName === DISABLED_TIER.label
       ? 0
-      : Math.round(positionForProb(totalW - (localWs[asset.stem] ?? 0), targetProbForTier(tierName)) * 100) / 100;
+      : Math.round(positionForProb(totalW - (localWs[asset.stem] ?? 0), targetProbForTier(tierName)));
+    // positionForProb solves relative to every OTHER trait's weight — when
+    // that's zero (e.g. this is the only active trait left in the layer, or
+    // every other trait is currently at weight 0), there's nothing to solve
+    // relative to and it returns 0. The backend rejects rarityWeight <= 0
+    // for any non-disabled tier, so a real tier pick would fail outright in
+    // that state. Fall back to the tier's own flat preset weight instead —
+    // still lands the trait in the right tier band once other traits get
+    // real weight again, and a tier selection should never just fail.
+    if (weight <= 0 && tierName !== DISABLED_TIER.label) {
+      weight = TIER_PRESET_WEIGHTS[tierName] ?? 1;
+    }
+    const prevWeight = localWs[asset.stem];
+    const prevTierOverride = localTierOverrides[asset.stem];
+    setW(asset.stem, weight);
+    const isDisabling = tierName === DISABLED_TIER.label;
+    // Disabling isn't one of the four real tiers — leave whatever rarity
+    // classification was stored as-is, so re-enabling the trait later still
+    // remembers it instead of forgetting it back to a live guess.
+    if (!isDisabling) setLocalTierOverrides(prev => ({ ...prev, [asset.stem]: tierName.toLowerCase() }));
+    if (!asset.id) return;
+    try {
+      // The backend rejects rarityWeight <= 0 outright — a trait is disabled
+      // via isActive:false, not a zero weight. Sending both rarityWeight:0
+      // AND isActive:true (as this always used to) meant "Disabled" was
+      // rejected by the server on every single attempt, for every trait —
+      // the fire-and-forget save just never surfaced that until now.
+      const res = await fetch(`/api/nft-gen/traits/${asset.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isDisabling
+          ? { isActive: false }
+          : { rarityWeight: weight, rarityTier: tierName.toLowerCase(), isActive: true }),
+      });
+      if (!res.ok) {
+        // Surface the server's own reason instead of a generic message — a
+        // validation rejection (e.g. an invalid computed weight) looks
+        // nothing like a network failure, and showing "check your
+        // connection" for both makes a real bug indistinguishable from a
+        // transient blip.
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? `Save failed (HTTP ${res.status})`);
+      }
+    } catch (e: any) {
+      // A silently-swallowed failure here used to leave the dropdown looking
+      // selected locally (localWs already updated above) while the server
+      // never got the change — from the artist's side that reads as "the
+      // dropdown sometimes just doesn't take," with no indication why. Roll
+      // the optimistic update back so the UI honestly reflects what's saved,
+      // and say so instead of pretending it worked.
+      if (prevWeight != null) setW(asset.stem, prevWeight);
+      if (!isDisabling) setLocalTierOverrides(prev => ({ ...prev, [asset.stem]: prevTierOverride }));
+      // The full technical reason goes to the console for debugging — the
+      // artist-facing message stays plain and reassuring, not raw backend text.
+      console.error(`[applyTier] failed to save tier for ${asset.stem}:`, e);
+      setTierSaveError(`Couldn't save the "${tierName}" setting for ${asset.name ?? asset.stem}. Please try again.`);
+    }
+  }
+
+  // The exact-weight number input (behind the "%" toggle) only updated local
+  // state on every keystroke — nothing persisted it until the footer's "Save
+  // Rarity" was clicked, unlike the tier dropdown next to it, which saves
+  // immediately. That gap meant a typed percentage looked committed but was
+  // silently lost on Cancel/close. Mirrors applyTier's save-with-rollback
+  // pattern, but only touches rarity_weight — a direct weight edit shouldn't
+  // also reclassify the trait's tier label.
+  async function applyWeight(asset, weight: number) {
+    // No "skip if unchanged" guard here on purpose: localWs[asset.stem] is
+    // already updated on every keystroke via onChange, so by the time blur
+    // fires it always equals the new value — a stale-value check here would
+    // always read "unchanged" and silently never save. This only runs on
+    // blur/Enter (an explicit commit), not per keystroke, so re-sending an
+    // unchanged value is a harmless no-op, not a perf concern.
+    const prevWeight = localWs[asset.stem];
     setW(asset.stem, weight);
     if (!asset.id) return;
-    await fetch(`/api/nft-gen/traits/${asset.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rarityWeight: weight, isActive: true }),
-    }).catch(() => {});
+    try {
+      const res = await fetch(`/api/nft-gen/traits/${asset.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(weight > 0 ? { rarityWeight: weight, isActive: true } : { isActive: false }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? `Save failed (HTTP ${res.status})`);
+      }
+    } catch (e: any) {
+      if (prevWeight != null) setW(asset.stem, prevWeight);
+      console.error(`[applyWeight] failed to save weight for ${asset.stem}:`, e);
+      setTierSaveError(`Couldn't save the weight for ${asset.name ?? asset.stem}. Please try again.`);
+    }
   }
 
   // Opened from a card click (not the gear icon) — scroll straight to that
@@ -72,6 +175,7 @@ export default function RarityModal({
   const [traitNames, setTraitNames] = useState<Record<string, string>>(() =>
     Object.fromEntries(layer.assets.map(a => [a.stem, a.name])));
   const [weightInputOpen, setWeightInputOpen] = useState<Record<string, boolean>>({});
+  const [tierSaveError, setTierSaveError] = useState('');
 
   const totalW  = useMemo(() => Object.values(localWs).reduce((a, b) => a + b, 0), [localWs]);
   // sliderMax scales with the heaviest trait so the thumb and tier-zone bar
@@ -228,10 +332,16 @@ export default function RarityModal({
 
         {tab === 'rules' && onSaveConflicts ? (
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <RulesTabContent layer={layer} layers={allLayers ?? [layer]} rules={conflicts} onChange={onSaveConflicts} compact={compact} />
+            <RulesTabContent layer={layer} layers={allLayers ?? [layer]} rules={conflicts} onChange={onSaveConflicts} saveError={conflictSaveError} compact={compact} />
           </div>
         ) : (
         <>
+        {(tierSaveError || weightSaveError) && (
+          <div style={{ fontSize: 12.5, color: '#ef4444', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6, padding: '6px 10px', margin: '0 0 10px' }}>
+            ⚠ {tierSaveError || weightSaveError}
+            <button onClick={() => { setTierSaveError(''); onDismissWeightSaveError?.(); }} style={{ marginLeft: 8, background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 700 }}>✕</button>
+          </div>
+        )}
         {/* Asset List */}
         <div
           className="rm-list rm-list-v2"
@@ -242,8 +352,12 @@ export default function RarityModal({
             .sort((a, b) => a.stem.localeCompare(b.stem, undefined, { numeric: true, sensitivity: 'base' }))
             .map((asset, idx) => {
             const w = localWs[asset.stem] ?? 1;
-            const { pct, tier } = calcRarity(w, totalW, supply);
+            const { pct, tier: liveTier } = calcRarity(w, totalW, supply);
             const enabled = w > 0;
+            // A disabled trait (weight 0) must always show Disabled — that's
+            // a structural state, not a rarity choice, so it overrides any
+            // stored/override classification rather than the other way round.
+            const tier = enabled ? resolveTier(localTierOverrides[asset.stem] ?? asset.rarityTier, liveTier) : liveTier;
 
             if (compact) {
               // ── Compact row (no slider, no tier-zone bar) ──────────────────
@@ -299,9 +413,9 @@ export default function RarityModal({
                       ? (traitNames[asset.stem] ?? asset.name) : ''}
                   </span>
 
-                  {/* Tier dropdown — compact. Value is the live-computed tier
-                      (same source as the badge color below), never a stored
-                      DB label — see applyTier for why. */}
+                  {/* Tier dropdown — compact. Value is resolveTier()'s result:
+                      the artist's own Excel rarity / a manual override when
+                      one exists, live-computed otherwise — see resolveTier. */}
                   <select
                     value={tier.label}
                     onChange={e => applyTier(asset, e.target.value)}
@@ -429,6 +543,8 @@ export default function RarityModal({
                     type="number" min="0" step="0.1"
                     value={w}
                     onChange={e => setW(asset.stem, Math.max(0, parseFloat(e.target.value) || 0))}
+                    onBlur={e => applyWeight(asset, Math.max(0, parseFloat(e.target.value) || 0))}
+                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                   />
                 )}
 

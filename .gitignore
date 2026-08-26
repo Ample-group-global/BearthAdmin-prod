@@ -45,3 +45,6 @@ blob-report/
 tests/
 playwright-report/
 v1-ui-check.ts
+
+.vercel
+.env*
