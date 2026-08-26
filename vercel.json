@@ -1,5 +1,5 @@
 {
-  "installCommand": "pnpm install --no-frozen-lockfile",
+  "installCommand": "npm install",
   "buildCommand": "next build --webpack",
   "functions": {
     "app/api/layer-img/[...rel]/route.ts": { "maxDuration": 60 },
