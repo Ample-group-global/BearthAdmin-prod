@@ -1,0 +1,47 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Node.js
+node_modules/
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Vercel
+.vercel
+
+# Test / coverage
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Claude Code internal folder
+.claude/
+
+# Documentation — no markdown files pushed to GitHub
+*.md
+
+# Runtime logs
+*.log
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Test files / Playwright (not committed to repo — may contain saved
+# auth sessions with live tokens for real accounts)
+tests/
+playwright-report/
+v1-ui-check.ts

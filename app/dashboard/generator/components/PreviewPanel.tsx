@@ -1,0 +1,448 @@
+// @ts-nocheck
+'use client';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, memo } from 'react';
+import { useLayerFiles } from '../LayerFilesContext';
+import { fetchWithTimeout } from '../../../../lib/fetchWithTimeout';
+import NftPopup from './NftPopup';
+
+const THUMB      = 160;
+const CARD_MIN_W = 155; // matches CSS minmax(155px, 1fr)
+const GAP        = 12;  // matches CSS gap: 12px
+const CARD_BODY  = 36;  // thumb body height below image (padding + name)
+const OVERSCAN   = 3;   // extra rows rendered above/below viewport
+
+// ── Sort + filter ─────────────────────────────────────────────────────────────
+function applyView(items, sort, filter) {
+  let result = filter
+    ? items.filter(({ combo }) => combo[filter.folder]?.stem === filter.stem)
+    : [...items];
+  if (sort === 'rare-first') result.sort((a, b) => b.score - a.score);
+  else if (sort === 'rare-last') result.sort((a, b) => a.score - b.score);
+  return result;
+}
+
+// ── NFT Card ──────────────────────────────────────────────────────────────────
+// memo prevents re-renders on parent scroll state changes; useLayoutEffect
+// (no deps) redraws after every render so canvas is never left stale/blank.
+const NFTCard = memo(function NFTCard({ index, rank, tier, score, combo, layers, bitmapCache, bitmapVersion, canvasW, canvasH, collW, collH, onClick }) {
+  const canvasRef = useRef(null);
+
+  function draw() {
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.clearRect(0, 0, canvasW, canvasH);
+    for (const layer of layers) {
+      const pick = combo[layer.folder];
+      if (!pick?.rel) continue;
+      const bm = bitmapCache.current[pick.rel];
+      if (bm) ctx.drawImage(bm, 0, 0, canvasW, canvasH);
+    }
+  }
+
+  // No dependency array → redraws after every render, so a canvas that was
+  // cleared (e.g. by a width/height attribute update) is immediately repainted.
+  useLayoutEffect(() => { draw(); });
+
+  function handleClick() {
+    const attrs = layers
+      .filter(l => combo[l.folder] && combo[l.folder].rel !== null)
+      .map(l => ({ trait_type: l.label, value: combo[l.folder].name }));
+    onClick({ index, rank, tier, score, combo, layers, bitmapCache, collW, collH, attrs });
+  }
+
+  return (
+    <div className="prev-card" onClick={handleClick}>
+      <div className="prev-thumb">
+        <canvas
+          ref={canvasRef}
+          width={canvasW}
+          height={canvasH}
+          style={{ width: '100%', height: '100%', display: 'block' }}
+        />
+        {rank && <div className="prev-rank-badge">#{rank}</div>}
+      </div>
+      <div className="prev-card-body">
+        <div className="prev-card-name">#{index}</div>
+      </div>
+    </div>
+  );
+});
+
+// ── Layer filter sidebar row ──────────────────────────────────────────────────
+function FilterTraitThumb({ rel, name }) {
+  const { getBlobUrl } = useLayerFiles();
+  return rel ? (
+    <img
+      src={getBlobUrl(rel) ?? `/api/thumb/${rel}`}
+      alt={name}
+      loading="lazy"
+      style={{ width: 20, height: 20, objectFit: 'contain', borderRadius: 4, background: 'var(--bg2)', flexShrink: 0 }}
+      onError={e => { e.currentTarget.style.visibility = 'hidden'; }}
+    />
+  ) : <div style={{ width: 20, height: 20, flexShrink: 0 }} />;
+}
+
+function ExpandableLayerRow({ layer, activeFilter, onTraitClick }) {
+  const [open, setOpen] = useState(false);
+  const isActive = activeFilter?.folder === layer.folder;
+  return (
+    <div className="plr-group">
+      <div className="preview-layer-row" onClick={() => setOpen(o => !o)}>
+        <span className="plr-chevron">{open ? '▾' : '▸'}</span>
+        <span className="plr-name">{layer.label}</span>
+        <span className="plr-count">{layer.count}</span>
+      </div>
+      {open && (
+        <div className="plr-traits">
+          {[...layer.assets].sort((a, b) => a.stem.localeCompare(b.stem, undefined, { numeric: true, sensitivity: 'base' })).map(a => (
+            <div
+              key={a.stem}
+              className={`plr-trait-row${isActive && activeFilter?.stem === a.stem ? ' plr-trait-active' : ''}`}
+              onClick={() => onTraitClick(layer, a)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              <FilterTraitThumb rel={a.rel} name={a.name} />
+              <span className="plr-trait-name">{a.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SORT_LABELS = {
+  shuffle:      'Shuffle',
+  'rare-first': 'Most rare first',
+  'rare-last':  'Most rare last',
+};
+
+// ── Main component ────────────────────────────────────────────────────────────
+export default function PreviewPanel({ weights, layers, collection, conflicts }) {
+  const { getBlobUrl } = useLayerFiles();
+  const supply  = Number(collection?.supply ?? 0);
+  const srcW    = Number(collection?.width  ?? 0);
+  const srcH    = Number(collection?.height ?? 0);
+  const scale   = (srcW > 0 && srcH > 0) ? Math.min(THUMB / srcW, THUMB / srcH, 1) : 1;
+  const canvasW = srcW > 0 ? Math.max(1, Math.round(srcW * scale)) : THUMB;
+  const canvasH = srcH > 0 ? Math.max(1, Math.round(srcH * scale)) : THUMB;
+
+  const [phase,         setPhase]         = useState('idle');
+  const [loadMsg,       setLoadMsg]       = useState('');
+  const [visible,       setVisible]       = useState([]);
+  const [sortBy,        setSortBy]        = useState('shuffle');
+  const [sortOpen,      setSortOpen]      = useState(false);
+  const [filter,        setFilter]        = useState(null);
+  const [popup,         setPopup]         = useState(null);
+  const [bitmapVersion, setBitmapVersion] = useState(0);
+
+  // Virtual scroll state
+  const [scrollTop,  setScrollTop]  = useState(0);
+  const [gridW,      setGridW]      = useState(0);
+  const [gridH,      setGridH]      = useState(600);
+  const scrollRef = useRef(null);
+
+  const bitmapCache = useRef({});
+  const scoredRef   = useRef([]);
+  const sortRef     = useRef('shuffle');
+  const filterRef   = useRef(null);
+
+  // Measure scroll container
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      setGridW(el.clientWidth);
+      setGridH(el.clientHeight);
+    });
+    ro.observe(el);
+    setGridW(el.clientWidth);
+    setGridH(el.clientHeight);
+    return () => ro.disconnect();
+  }, [phase]); // re-attach when phase changes to 'ready'
+
+  // Virtual grid math
+  const cols   = gridW > 0 ? Math.max(1, Math.floor((gridW + GAP) / (CARD_MIN_W + GAP))) : 4;
+  const cardW  = gridW > 0 ? Math.floor((gridW - (cols - 1) * GAP) / cols) : CARD_MIN_W;
+  const rowH   = cardW + CARD_BODY + GAP;
+  const totalRows = Math.ceil(visible.length / cols);
+  const startRow  = Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN);
+  const endRow    = Math.min(totalRows - 1, Math.ceil((scrollTop + gridH) / rowH) + OVERSCAN);
+  const padTop    = startRow * rowH;
+  const padBot    = Math.max(0, (totalRows - endRow - 1) * rowH);
+  const window_   = visible.slice(startRow * cols, (endRow + 1) * cols);
+
+  // Close sort dropdown on outside click
+  const sortWrapRef = useRef(null);
+  useEffect(() => {
+    if (!sortOpen) return;
+    function onDoc(e) {
+      if (sortWrapRef.current && !sortWrapRef.current.contains(e.target)) setSortOpen(false);
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [sortOpen]);
+
+  const rebuild = useCallback((scored, sort, f) => {
+    setVisible(applyView(scored, sort, f));
+    setScrollTop(0);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, []);
+
+  async function run() {
+    if (!supply) {
+      setLoadMsg('Collection size is still loading — wait a moment and try again.');
+      return;
+    }
+    if (!srcW || !srcH) {
+      setLoadMsg('Dimensions not configured — set Width and Height in Settings first.');
+      return;
+    }
+    setPhase('loading');
+
+    // 1. Pre-load all unique layer bitmaps
+    const rels = [...new Set(
+      layers.flatMap(l => l.assets.filter(a => a.rel).map(a => a.rel))
+    )];
+    let loaded = 0;
+    const imgTotal = rels.length;
+    setLoadMsg('Loading images…');
+
+    // Load bitmaps in small batches to avoid OOM from 86 concurrent 2000×2000 images.
+    // Use server-resized 160×160 thumbnails (Sharp) instead of full-res raw PNGs.
+    const BATCH = 10;
+    for (let i = 0; i < rels.length; i += BATCH) {
+      await Promise.all(rels.slice(i, i + BATCH).map(async rel => {
+        if (bitmapCache.current[rel]) { loaded++; setLoadMsg(`Loading images… ${Math.round(loaded / imgTotal * 100)}%`); return; }
+        try {
+          const blobUrl = getBlobUrl(rel);
+          let res: Response;
+          if (blobUrl) {
+            res = await fetchWithTimeout(blobUrl);
+            if (!res.ok) res = await fetchWithTimeout(`/api/thumb/${rel}`);
+          } else {
+            res = await fetchWithTimeout(`/api/thumb/${rel}`);
+          }
+          if (res.ok) {
+            const blob = await res.blob();
+            bitmapCache.current[rel] = await createImageBitmap(blob);
+          } else {
+            console.warn(`[preview] image HTTP ${res.status} for ${rel}`);
+          }
+        } catch (e) {
+          console.warn(`[preview] bitmap load failed for ${rel}:`, e);
+        }
+        loaded++;
+        setLoadMsg(`Loading images… ${Math.round(loaded / imgTotal * 100)}%`);
+      }));
+    }
+
+    // Signal that bitmaps are ready — forces NFTCard re-renders so canvases draw
+    setBitmapVersion(v => v + 1);
+
+    // 2 & 3. Combo generation + rarity scoring run server-side only (single
+    // source of truth — same generateAllCombos()/computeRarity() real
+    // generation uses). Preview must never reimplement this logic locally;
+    // it sends the artist's current Organise-tab state (including unsaved
+    // edits) and just renders whatever the server computes.
+    setLoadMsg(`Generating NFTs… 0 / ${supply}`);
+    await new Promise(r => setTimeout(r, 0));
+
+    let scored: Array<{ combo: Record<string, any>; index: number; score: number; rank: number; tier: string }> = [];
+    try {
+      const res = await fetchWithTimeout('/api/nft-gen/generate/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supply, layers, weights, conflicts }),
+      }, 60_000);
+      if (!res.ok) throw new Error(`Preview generation failed (HTTP ${res.status})`);
+      const data = await res.json();
+      scored = (data.items ?? []).map((item: any) => ({
+        combo: item.combo, index: item.index, score: item.score, rank: item.rank, tier: item.tier,
+      }));
+    } catch (e) {
+      console.error('[preview] server-side combo generation failed:', e);
+      setLoadMsg('Preview failed — could not reach the server. Try again.');
+      setPhase('idle');
+      return;
+    }
+
+    setLoadMsg(`Generating NFTs… ${supply} / ${supply}`);
+
+    scoredRef.current = scored;
+    sortRef.current   = 'shuffle';
+    filterRef.current = null;
+    setSortBy('shuffle');
+    setFilter(null);
+    rebuild(scored, 'shuffle', null);
+    setPhase('ready');
+  }
+
+  useEffect(() => { if (layers.length > 0) run(); }, []);
+
+  function handleSort(s) {
+    setSortOpen(false);
+    if (s === 'shuffle') {
+      // Re-shuffle regenerates combos — bitmaps are already cached so loading phase is instant
+      run();
+    } else {
+      setSortBy(s);
+      sortRef.current = s;
+      rebuild(scoredRef.current, s, filterRef.current);
+    }
+  }
+
+  function handleTraitClick(layer, asset) {
+    const same = filter?.folder === layer.folder && filter?.stem === asset.stem;
+    const next = same ? null : { folder: layer.folder, stem: asset.stem, layerLabel: layer.label, assetName: asset.name };
+    filterRef.current = next;
+    setFilter(next);
+    rebuild(scoredRef.current, sortRef.current, next);
+  }
+
+  function clearFilter() {
+    filterRef.current = null;
+    setFilter(null);
+    rebuild(scoredRef.current, sortRef.current, null);
+  }
+
+  if (layers.length === 0) {
+    return (
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:12, color:'var(--dim)', textAlign:'center', padding:40 }}>
+        <div style={{ fontSize:40 }}>👁️</div>
+        <div style={{ fontSize:16, fontWeight:600, color:'var(--text)' }}>No layers to preview</div>
+        <div style={{ fontSize:13 }}>Import and organize your layers first to generate a preview.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="preview-layout">
+      {/* ── Left panel ── */}
+      <div className="preview-left-panel">
+        <button className="randomize-btn" onClick={run} disabled={phase === 'loading' || !supply || !srcW || !srcH}>
+          {phase === 'loading' ? loadMsg : 'Randomize'}
+        </button>
+
+        <div className="preview-count-row">
+          <span className="preview-count-num">{supply.toLocaleString()}</span>
+          <span className="preview-count-label">tokens</span>
+        </div>
+
+        <div className="preview-sample-note">
+          {phase === 'ready'
+            ? visible.length < supply
+              ? `${visible.length.toLocaleString()} shown (filtered)`
+              : `All ${supply.toLocaleString()} NFTs`
+            : 'Generating…'}
+        </div>
+
+        {filter && (
+          <div className="plr-filter-badge">
+            <span>Filter: <b>{filter.layerLabel} › {filter.assetName}</b></span>
+            <button onClick={clearFilter} className="plr-filter-clear">✕</button>
+          </div>
+        )}
+
+        <div className="preview-layer-breakdown">
+          {layers.map(l => (
+            <ExpandableLayerRow
+              key={l.folder}
+              layer={l}
+              activeFilter={filter}
+              onTraitClick={handleTraitClick}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Right panel ── */}
+      <div className="preview-right-panel">
+        {phase === 'loading' && (
+          <div className="preview-empty">
+            <div className="loading"><div className="spinner" /></div>
+            <div style={{ color:'var(--dim)', fontSize:13, marginTop:12 }}>{loadMsg}</div>
+          </div>
+        )}
+
+        {phase === 'ready' && (
+          <>
+            {/* Controls bar — stays fixed at top, does NOT scroll */}
+            <div className="prev-controls-bar">
+              <div className="prev-tokens-badge">
+                {visible.length.toLocaleString()} tokens
+              </div>
+              <div ref={sortWrapRef} style={{ position:'relative' }}>
+                <button className="prev-sort-btn" onClick={() => setSortOpen(o => !o)}>
+                  Sort: {SORT_LABELS[sortBy]} ▾
+                </button>
+                {sortOpen && (
+                  <div className="prev-sort-dropdown" style={{ position:'absolute', right:0, top:'110%', zIndex:100 }}>
+                    {Object.entries(SORT_LABELS).map(([k, l]) => (
+                      <button
+                        key={k}
+                        className={`prev-sort-option${sortBy === k ? ' active' : ''}`}
+                        onClick={() => handleSort(k)}
+                      >{l}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {visible.length === 0 && filter && (
+              <div className="preview-empty">
+                <div style={{ fontSize:13, color:'var(--dim)' }}>
+                  No NFTs contain <b>{filter.assetName}</b>.{' '}
+                  <button className="link-btn" onClick={run}>Randomize</button>
+                </div>
+              </div>
+            )}
+
+            {/* Virtual scroll container — only cards in viewport are in the DOM */}
+            <div
+              ref={scrollRef}
+              className="prev-grid-scroll"
+              onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
+            >
+              {/* Top spacer simulates rows above the visible window */}
+              {padTop > 0 && <div style={{ height: padTop }} />}
+
+              <div
+                className="prev-grid"
+                style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
+              >
+                {window_.map(({ combo, index, rank, tier, score }) => {
+                  const comboKey = `${index}-${Object.values(combo).map((a: any) => a?.stem ?? '').join('|')}`;
+                  return (
+                    <NFTCard
+                      key={comboKey}
+                      index={index}
+                      rank={sortBy !== 'shuffle' ? rank : null}
+                      tier={tier}
+                      score={score}
+                      combo={combo}
+                      layers={layers}
+                      bitmapCache={bitmapCache}
+                      bitmapVersion={bitmapVersion}
+                      canvasW={canvasW}
+                      canvasH={canvasH}
+                      collW={srcW}
+                      collH={srcH}
+                      onClick={setPopup}
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Bottom spacer simulates rows below the visible window */}
+              {padBot > 0 && <div style={{ height: padBot }} />}
+            </div>
+          </>
+        )}
+      </div>
+
+      {popup && <NftPopup item={popup} onClose={() => setPopup(null)} />}
+    </div>
+  );
+}
