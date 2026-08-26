@@ -302,9 +302,11 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
       }
       if (Object.keys(groups).length === 0) return;
 
-      // Clear bearth-layers bucket before uploading new collection layers
-      await fetch('/api/nft-gen/layers/clear-bucket', { method: 'POST' }).catch(() => {});
-
+      // Each layer's stale files are cleaned up server-side, scoped to that
+      // layer's own prefix, only after its new files finish uploading
+      // successfully — see /upload route. No blanket bucket wipe here: that
+      // used to run unconditionally before every drop and could empty the
+      // shared bucket for everyone if an upload failed partway through.
       const results = await Promise.allSettled(
         Object.entries(groups).map(async ([layer, entries]) => {
           const form = new FormData();
