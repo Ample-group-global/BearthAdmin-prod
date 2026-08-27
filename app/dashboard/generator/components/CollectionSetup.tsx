@@ -203,10 +203,23 @@ function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
     // path: if a sheet's row order ever didn't match the files' sorted
     // order, names/weights/rarities would silently attach to the wrong
     // trait with no warning, since row COUNT matching alone can't catch
-    // that. Falls back to positional matching only when no ID column
-    // exists on the sheet at all.
-    if (idsForLayer && idsForLayer.length === assets.length) {
-      const rowByStem = new Map(idsForLayer.map((id, i) => [id, i]));
+    // that.
+    //
+    // But the ID column isn't always a file-stem at all — some sheets use
+    // the artist's own catalog numbering (e.g. "46023"), unrelated to how
+    // the files happen to be named on disk ("1-1.png"). Confirmed live:
+    // two full layers (36 traits) matched zero rows via ID and every trait
+    // silently kept its default weight=1/tier=null, while the UI still
+    // reported "weights applied" for that layer since a *different* sheet
+    // in the same workbook did have a real file-stem ID column. Falls back
+    // to positional matching whenever the ID column exists but matches
+    // none of this layer's actual files — not just when it's absent.
+    const rowByStem = idsForLayer && idsForLayer.length === assets.length
+      ? new Map(idsForLayer.map((id, i) => [id, i]))
+      : null;
+    const idMatchCount = rowByStem ? assets.filter(a => rowByStem.has(a.stem)).length : 0;
+
+    if (idMatchCount > 0) {
       assets.forEach(a => {
         const i = rowByStem.get(a.stem);
         if (i == null) return; // this file's stem has no matching Trait ID row — leave its default
@@ -215,10 +228,10 @@ function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
         if (raritiesForLayer) a.rarityTier = raritiesForLayer[i];
       });
     } else {
-      // Positional fallback (no ID column on this sheet) — only when the
-      // matched sheet's row count exactly equals this layer's trait count,
-      // a mismatch means the sheet doesn't actually correspond 1:1 to
-      // these files, so we don't guess.
+      // Positional fallback — only when the matched sheet's row count
+      // exactly equals this layer's trait count; a mismatch means the
+      // sheet doesn't actually correspond 1:1 to these files, so we don't
+      // guess.
       if (namesForLayer && namesForLayer.length === assets.length) {
         assets.forEach((a, i) => { a.name = namesForLayer[i]; });
       }
