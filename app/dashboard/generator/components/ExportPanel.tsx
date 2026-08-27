@@ -69,6 +69,19 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   const [cidPhase, setCidPhase] = useState('');
   const [cidError, setCidError] = useState('');
   const cidPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Real missing-CID count shown up front — previously this whole section
+  // was a collapsed "Advanced" block with no indication of whether it was
+  // even needed, so the artist had no way to know to open it.
+  const [missingCidCount, setMissingCidCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!dbSaved || !dbJobIdRef.current || cidStatus !== 'idle') return;
+    let cancelled = false;
+    fetch(`/api/nft-gen/export/cid-status?jobId=${encodeURIComponent(dbJobIdRef.current)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d) setMissingCidCount(d.missing ?? 0); })
+      .catch(() => { });
+    return () => { cancelled = true; };
+  }, [dbSaved, cidStatus]);
 
   // ── Server-side generation state ──────────────────────────────────────────
   const [svrGenStatus, setSvrGenStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
@@ -1784,16 +1797,24 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
 
       {/* ── Advanced: Fix Pending CIDs ── */}
       {dbSaved && dbJobIdRef.current && (
-        <details className="exp-fb-card exp-svr-card" style={{ padding: 0 }} data-testid="refresh-cids-section">
+        <details className="exp-fb-card exp-svr-card" style={{ padding: 0 }} data-testid="refresh-cids-section" open={!!missingCidCount}>
           <summary style={{ cursor: 'pointer', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 10, userSelect: 'none', listStyle: 'none', WebkitAppearance: 'none' }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Advanced — Fix Pending CIDs</span>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Only needed if metadata still shows <code style={{ fontSize: 11 }}>ipfs://pending/…</code></span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Fix Pending CIDs</span>
+            {missingCidCount == null ? (
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>Checking…</span>
+            ) : missingCidCount > 0 ? (
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b' }}>
+                ⚠ {missingCidCount.toLocaleString()} NFT{missingCidCount === 1 ? '' : 's'} missing a CID — click to fix
+              </span>
+            ) : (
+              <span style={{ fontSize: 12, color: 'var(--accent2, #22c55e)' }}>✓ All CIDs resolved</span>
+            )}
           </summary>
           <div style={{ padding: '0 20px 18px' }}>
             <div className="exp-fb-sub" style={{ marginBottom: 12 }}>
-              The export automatically resolves IPFS CIDs during generation (Phase 2). Use this only if some
-              metadata files still contain <code>ipfs://pending/…</code> after export completes — for example,
-              if Filebase was unusually slow during a large run.
+              The export automatically resolves IPFS CIDs during generation (Phase 2). Use this if some editions
+              are still missing a real CID after export completes — for example, if Filebase was unusually slow
+              during a large run, or an invocation was interrupted mid-batch.
             </div>
 
             {cidStatus === 'idle' && (
