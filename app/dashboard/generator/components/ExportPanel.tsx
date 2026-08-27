@@ -515,41 +515,53 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       parPollRefs.current[index] = setInterval(async () => {
         try {
           const pr = await fetch(`/api/nft-gen/export/range/${encodeURIComponent(sliceId)}`);
-          if (!pr.ok) return;
-          const state = await pr.json();
-          const newProgress = state.progress ?? 0;
+          if (pr.ok) {
+            const state = await pr.json();
+            const newProgress = state.progress ?? 0;
 
-          setParSlices(prev => prev.map((s, i) => i === index ? { ...s, progress: newProgress, status: state.status } : s));
+            setParSlices(prev => prev.map((s, i) => i === index ? { ...s, progress: newProgress, status: state.status } : s));
 
-          if (newProgress !== parLastProgressRef.current[index]) {
-            parLastProgressRef.current[index] = newProgress;
-            parLastProgressTimeRef.current[index] = Date.now();
-          }
+            if (newProgress !== parLastProgressRef.current[index]) {
+              parLastProgressRef.current[index] = newProgress;
+              parLastProgressTimeRef.current[index] = Date.now();
+            }
 
-          if (state.status === 'done') {
-            clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
-            return;
-          }
-          if (state.status === 'error') {
-            clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
-            setParStatus('error');
-            setParError(`Slice ${index + 1} failed: ${state.error ?? 'unknown error'}`);
-            return;
-          }
-
-          const stalledForMs = Date.now() - parLastProgressTimeRef.current[index];
-          if (stalledForMs > 30_000) {
-            clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
-            const nextResumeCount = (parResumeCountRef.current[index] ?? 0) + 1;
-            parResumeCountRef.current[index] = nextResumeCount;
-            if (nextResumeCount > PAR_MAX_AUTO_RESUMES) {
-              setParStatus('error');
-              setParError(`Slice ${index + 1} stalled after ${PAR_MAX_AUTO_RESUMES} resume attempts.`);
+            if (state.status === 'done') {
+              clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
               return;
             }
-            runParallelSliceAttempt(index, rangeStart, rangeEnd, rangeStart + newProgress, bucket, nextResumeCount);
+            if (state.status === 'error') {
+              clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
+              setParStatus('error');
+              setParError(`Slice ${index + 1} failed: ${state.error ?? 'unknown error'}`);
+              return;
+            }
           }
-        } catch { /* retry next tick */ }
+          // A failed poll (non-2xx, e.g. 404 when the tracked slice's
+          // in-memory state isn't reachable from whichever server instance
+          // served this request) falls through to the SAME stall check
+          // below instead of silently doing nothing. Confirmed live: the
+          // old code's `if (!pr.ok) return` skipped the stall check
+          // entirely on every failed poll, so a slice whose status checks
+          // all 404'd sat frozen forever with the auto-resume watchdog
+          // never getting a chance to fire — no error ever surfaced.
+        } catch {
+          // fetch() itself threw (e.g. offline) — same treatment, fall
+          // through to the stall check rather than silently retrying.
+        }
+
+        const stalledForMs = Date.now() - parLastProgressTimeRef.current[index];
+        if (stalledForMs > 30_000) {
+          clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
+          const nextResumeCount = (parResumeCountRef.current[index] ?? 0) + 1;
+          parResumeCountRef.current[index] = nextResumeCount;
+          if (nextResumeCount > PAR_MAX_AUTO_RESUMES) {
+            setParStatus('error');
+            setParError(`Slice ${index + 1} stalled after ${PAR_MAX_AUTO_RESUMES} resume attempts.`);
+            return;
+          }
+          runParallelSliceAttempt(index, rangeStart, rangeEnd, rangeStart + parLastProgressRef.current[index], bucket, nextResumeCount);
+        }
       }, 2000);
     } catch (e: any) {
       setParStatus('error');
