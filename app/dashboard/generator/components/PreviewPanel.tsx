@@ -118,7 +118,7 @@ const SORT_LABELS = {
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function PreviewPanel({ weights, layers, collection, conflicts }) {
+export default function PreviewPanel({ weights, layers, collection, conflicts, collectionId }) {
   const { getBlobUrl } = useLayerFiles();
   const supply  = Number(collection?.supply ?? 0);
   const srcW    = Number(collection?.width  ?? 0);
@@ -189,7 +189,45 @@ export default function PreviewPanel({ weights, layers, collection, conflicts })
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, []);
 
-  async function run() {
+  // Load the real, already-generated NFTs for this collection instead of a
+  // fresh random sample — same display-items endpoint and combo-mapping
+  // ExportPanel.tsx uses, so Preview and Export always agree. Returns null
+  // (caller falls back to a fresh /preview sample) when there's no completed
+  // job yet, or the fetch fails for any reason.
+  async function loadRealGeneratedItems() {
+    if (!collectionId) return null;
+    try {
+      const jobsRes = await fetchWithTimeout(`/api/nft-gen/jobs?collectionId=${collectionId}&status=complete`, {}, 15_000);
+      if (!jobsRes.ok) return null;
+      const jobsData = await jobsRes.json();
+      const jobId = jobsData?.jobs?.[0]?.id;
+      if (!jobId) return null;
+
+      const itemsRes = await fetchWithTimeout(`/api/nft-gen/jobs/${jobId}/display-items?limit=50000`, {}, 30_000);
+      if (!itemsRes.ok) return null;
+      const itemsData = await itemsRes.json();
+      const items = itemsData?.items;
+      if (!items?.length) return null;
+
+      return items.map((item: any) => {
+        const traits: Array<{ traitType: string; traitValue: string; traitId?: string | null }> = item.traits ?? [];
+        const combo: Record<string, any> = {};
+        for (const t of traits) {
+          const layer = layers.find(l => l.label === t.traitType);
+          if (!layer) continue;
+          const asset = t.traitId
+            ? layer.assets.find(a => a.id === t.traitId)
+            : layer.assets.find(a => a.name === t.traitValue);
+          if (asset?.rel) combo[layer.folder] = { rel: asset.rel, stem: asset.stem ?? asset.name, name: t.traitValue };
+        }
+        return { combo, index: item.editionNumber, score: item.rarityScore, rank: item.rarityRank, tier: item.rarityTier };
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async function run(opts: { preferReal?: boolean } = {}) {
     if (!supply) {
       setLoadMsg('Collection size is still loading — wait a moment and try again.');
       return;
@@ -240,31 +278,42 @@ export default function PreviewPanel({ weights, layers, collection, conflicts })
     // Signal that bitmaps are ready — forces NFTCard re-renders so canvases draw
     setBitmapVersion(v => v + 1);
 
-    // 2 & 3. Combo generation + rarity scoring run server-side only (single
-    // source of truth — same generateAllCombos()/computeRarity() real
-    // generation uses). Preview must never reimplement this logic locally;
-    // it sends the artist's current Organise-tab state (including unsaved
-    // edits) and just renders whatever the server computes.
+    // 2 & 3. If this collection has already been really generated, show
+    // THAT real data — never a fresh independent sample that can (and did,
+    // confirmed live) show a completely different rank/score/tier than
+    // what's actually stored and what Export will use. Only when nothing's
+    // been generated yet (or the caller explicitly wants a fresh trial —
+    // the Randomize button) does this fall through to the sampling
+    // endpoint, which remains the single source of truth for combo
+    // generation + rarity scoring (same generateAllCombos()/computeRarity()
+    // real generation uses) — it sends the artist's current Organise-tab
+    // state (including unsaved edits) and just renders whatever the server
+    // computes.
     setLoadMsg(`Generating NFTs… 0 / ${supply}`);
     await new Promise(r => setTimeout(r, 0));
 
-    let scored: Array<{ combo: Record<string, any>; index: number; score: number; rank: number; tier: string }> = [];
-    try {
-      const res = await fetchWithTimeout('/api/nft-gen/generate/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supply, layers, weights, conflicts }),
-      }, 60_000);
-      if (!res.ok) throw new Error(`Preview generation failed (HTTP ${res.status})`);
-      const data = await res.json();
-      scored = (data.items ?? []).map((item: any) => ({
-        combo: item.combo, index: item.index, score: item.score, rank: item.rank, tier: item.tier,
-      }));
-    } catch (e) {
-      console.error('[preview] server-side combo generation failed:', e);
-      setLoadMsg('Preview failed — could not reach the server. Try again.');
-      setPhase('idle');
-      return;
+    let scored: Array<{ combo: Record<string, any>; index: number; score: number; rank: number; tier: string }> | null = null;
+    if (opts.preferReal) {
+      scored = await loadRealGeneratedItems();
+    }
+    if (!scored) {
+      try {
+        const res = await fetchWithTimeout('/api/nft-gen/generate/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ supply, layers, weights, conflicts }),
+        }, 60_000);
+        if (!res.ok) throw new Error(`Preview generation failed (HTTP ${res.status})`);
+        const data = await res.json();
+        scored = (data.items ?? []).map((item: any) => ({
+          combo: item.combo, index: item.index, score: item.score, rank: item.rank, tier: item.tier,
+        }));
+      } catch (e) {
+        console.error('[preview] server-side combo generation failed:', e);
+        setLoadMsg('Preview failed — could not reach the server. Try again.');
+        setPhase('idle');
+        return;
+      }
     }
 
     setLoadMsg(`Generating NFTs… ${supply} / ${supply}`);
@@ -278,7 +327,7 @@ export default function PreviewPanel({ weights, layers, collection, conflicts })
     setPhase('ready');
   }
 
-  useEffect(() => { if (layers.length > 0) run(); }, []);
+  useEffect(() => { if (layers.length > 0) run({ preferReal: true }); }, []);
 
   function handleSort(s) {
     setSortOpen(false);

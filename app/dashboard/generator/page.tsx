@@ -521,6 +521,7 @@ export default function Page() {
             layers={layers}
             collection={collection}
             conflicts={conflicts}
+            collectionId={collectionId as never}
           />
         )}
 
