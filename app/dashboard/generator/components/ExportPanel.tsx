@@ -210,6 +210,32 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           setSvrGenStatus('done');
           setDbSaved(true);
           setPhase('done');
+
+          // A real export (images + metadata + CIDs, run to completion) may
+          // already exist from a PRIOR browser session or even a different
+          // machine — svrStatus/exportDone are pure client-side state
+          // (React state + localStorage) that only ever get set by the tab
+          // that actually ran the export, so a fresh tab had no way to know
+          // and would show "Generate" again with no Download button despite
+          // the export being genuinely done. Confirmed live: exported a full
+          // 9,999-item collection via one browser session, opened a second
+          // one, saw no progress bar and no Download button at all.
+          // export_bucket is persisted server-side on every export attempt
+          // (single or parallel), so it's a reliable pointer to check
+          // without asking the artist to re-pick a bucket first.
+          if (latestJob.export_bucket) {
+            try {
+              const cidRes = await fetch(`/api/nft-gen/export/cid-status?jobId=${latestJob.id}`);
+              if (cidRes.ok) {
+                const cidData = await cidRes.json();
+                if (!cancelled && !generationStartedRef.current && cidData.total > 0 && cidData.missing === 0) {
+                  setSvrBucket(latestJob.export_bucket);
+                  setDlBucket(latestJob.export_bucket);
+                  setExportDone(true);
+                }
+              }
+            } catch { /* best-effort — Download stays hidden if this fails, same as before */ }
+          }
           return;
         } catch { /* retry */ }
       }
