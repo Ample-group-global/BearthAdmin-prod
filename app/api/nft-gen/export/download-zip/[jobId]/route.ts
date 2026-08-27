@@ -11,11 +11,17 @@ const API_BASE = process.env.BEARTH_API_URL!;
 // response mid-archive at the 60s mark, producing a ZIP with no End Of
 // Central Directory record (confirmed: a real download landed at ~27MB,
 // far short of the expected size, and every unzip tool rejected it).
-// Matches BearthApi-V1's own maxDuration (also raised to 800s) — this
-// proxy is the client of that upstream call, so it must allow at least
-// as long or it becomes the new bottleneck regardless of what the API
-// itself supports.
-export const maxDuration = 800;
+// Reverted from 800 back to 300 — setting it to 800 here silently broke
+// every Vercel deployment from that point on (confirmed via GitHub's
+// commit-status API: every commit after that change shows "Deployment
+// has failed", while BearthApi-V1's own vercel.json also setting 800
+// deploys fine — this project's plan/config apparently doesn't accept
+// 800 via a Next.js route's own `maxDuration` export the same way).
+// 300 is the universally-safe ceiling on every Vercel plan tier. This
+// route is also no longer the primary download path — the direct-to-
+// folder downloader (ExportPanel.tsx) bypasses it entirely for exported
+// collections; this only still matters for the pre-export fallback.
+export const maxDuration = 300;
 
 // Node's fetch() (undici under the hood) applies a default headersTimeout/
 // bodyTimeout to every request unless told otherwise. BearthApi-V1 already
