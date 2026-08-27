@@ -138,43 +138,15 @@ export default function Page() {
             if (Array.isArray(c.conflictRules)) setConflicts(c.conflictRules);
           })
           .catch(() => {});
-      } else {
-        // No session cookie (e.g. incognito) — restore from most recent collection in DB
-        fetch('/api/nft-gen/collections?limit=1')
-          .then(r => r.ok ? r.json() : null)
-          .then(async data => {
-            const first = (data?.collections ?? data)?.[0] ?? null;
-            if (!first?.id) return;
-            setCollectionId(first.id);
-            setSessionRestored(true);
-            loadLayers(undefined, first.id);
-            fetch('/api/session/collection', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ collectionId: first.id, name: first.name }),
-            }).catch(() => {});
-            // Fetch full record so supply/nameFormat/formatType are loaded
-            const fullResp = await fetch(`/api/nft-gen/collections/${first.id}`).catch(() => null);
-            if (!fullResp?.ok) return;
-            const fullData = await fullResp.json().catch(() => null);
-            const c = fullData?.collection ?? fullData;
-            if (!c?.id) return;
-            setCollection(prev => ({
-              ...prev,
-              name:        c.name        ?? prev.name,
-              description: c.description ?? prev.description,
-              symbol:      c.symbol      ?? prev.symbol,
-              blockchain:  c.network ?? 'ethereum',
-              width:       c.formatWidth  ?? prev.width,
-              height:      c.formatHeight ?? prev.height,
-              supply:      c.supply       ?? prev.supply,
-              nameFormat:  c.nameFormat   ?? prev.nameFormat,
-              format:      c.formatType   ?? prev.format,
-            }));
-            if (Array.isArray(c.conflictRules)) setConflicts(c.conflictRules);
-          })
-          .catch(() => {});
       }
+      // No session cookie (e.g. a fresh browser, cleared cookies, or a
+      // different artist who has never used this tool yet) means a fresh,
+      // empty Settings tab — nothing more to do here. This used to fall back
+      // to auto-loading the single most-recently-created collection in the
+      // whole DB and silently attaching this browser's session to it, which
+      // meant any artist with no cookie yet could land on and start editing
+      // (or worse, re-generating over) a completely different artist's
+      // collection. Never assume "no cookie" means "resume somebody else's work."
     });
   }, []);
 
@@ -508,6 +480,16 @@ export default function Page() {
                   layerWeights={weights[activeFolder!] ?? {}}
                   allWeights={weights}
                   supply={collection.supply}
+                  // Same session-prefix namespace every layer in this
+                  // collection already shares (from the initial bulk
+                  // upload) — derived from ANY layer that already has an
+                  // asset, not just the active one, since the active layer
+                  // itself may still be empty. Adding files here without
+                  // this would land in an unscoped flat key that a
+                  // different artist's own upload could collide with —
+                  // the exact incident this project's own upload route
+                  // comment already documents.
+                  sessionPrefix={layers.flatMap(l => l.assets ?? []).find(a => a?.rel)?.rel?.split('/')[0]}
                   onWeightChange={handleWeightChange}
                   onLayersChange={loadLayers}
                   onGenerate={() => goToStep('preview')}
