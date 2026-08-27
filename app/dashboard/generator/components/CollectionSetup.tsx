@@ -413,13 +413,44 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
         return layer;
       }
 
-      const results = await Promise.allSettled(
-        Object.entries(groups).map(([layer, entries]) => uploadLayerChunked(layer, entries)),
-      );
+      // Layers used to all upload at once (Promise.allSettled over every
+      // layer with zero throttling) -- for an 8-layer, 200+ file collection
+      // that's a burst of many concurrent /api/upload requests landing on
+      // Vercel at the same instant, which is exactly the kind of load that
+      // triggers intermittent per-layer failures under real traffic
+      // (confirmed live: 6/8 layers failed on one run, then 0/8 on an
+      // identical retry seconds later -- a load/timing issue, not a data
+      // problem). Capping how many layers upload at once trades a little
+      // wall-clock time for not overloading the endpoint in the first place.
+      const LAYER_UPLOAD_CONCURRENCY = 3;
+      const layerEntries = Object.entries(groups);
+      const results: PromiseSettledResult<string>[] = new Array(layerEntries.length);
+      let cursor = 0;
+      async function uploadWorker() {
+        while (cursor < layerEntries.length) {
+          const i = cursor++;
+          const [layer, entries] = layerEntries[i];
+          try {
+            results[i] = { status: 'fulfilled', value: await uploadLayerChunked(layer, entries) };
+          } catch (e) {
+            results[i] = { status: 'rejected', reason: e };
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: LAYER_UPLOAD_CONCURRENCY }, uploadWorker));
 
-      const failed = Object.keys(groups).filter((_, i) => results[i].status === 'rejected');
+      const failed: string[] = [];
+      results.forEach((result, i) => {
+        if (result.status !== 'rejected') return;
+        const layer = layerEntries[i][0];
+        failed.push(layer);
+        // Logs the actual reason (timeout, HTTP 500, count mismatch...),
+        // not just the layer name -- Promise.allSettled already had this,
+        // it was just being discarded, making every failure equally
+        // unexplainable after the fact.
+        console.error(`[upload] layer "${layer}" failed:`, result.reason);
+      });
       if (failed.length) {
-        console.error('[upload] layer(s) failed to upload to S3:', failed);
         setUploadFailedLayers(failed);
         setServerUploadStatus('error');
       } else {
