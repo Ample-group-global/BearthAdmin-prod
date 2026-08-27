@@ -162,11 +162,26 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       .then(r => r.ok ? r.json() : { objects: [] })
       .then(data => {
         if (cancelled) return;
-        const imageCount = (data.objects ?? []).filter((o: any) =>
-          String(o.key ?? o.Key ?? '').startsWith('images/')
-        ).length;
-        setResumeDetected(imageCount);
-        if (imageCount > 0) setSvrResumeFrom(imageCount);
+        // A raw count of uploaded images is only a safe resume point if
+        // completion is strictly contiguous from edition 1 — true for most
+        // of a run, but NOT guaranteed for whichever batch was in flight
+        // when it was interrupted (batches upload with internal
+        // concurrency, so the last partial batch can finish a few editions
+        // out of order). The server's resume loop trusts this cutoff
+        // unconditionally (`if (editionNum <= resumeFrom) continue`), so
+        // using a plain count here carries the same class of risk fixed in
+        // startParallelExport() — just a narrower window. Compute the real
+        // contiguous prefix instead.
+        const doneEditions = new Set<number>();
+        for (const o of (data.objects ?? [])) {
+          const key = String(o.key ?? o.Key ?? '');
+          const m = key.match(/^images\/(\d+)\.\w+$/);
+          if (m) doneEditions.add(Number(m[1]));
+        }
+        let contiguous = 0;
+        while (doneEditions.has(contiguous + 1)) contiguous++;
+        setResumeDetected(contiguous);
+        if (contiguous > 0) setSvrResumeFrom(contiguous);
       })
       .catch(() => { if (!cancelled) setResumeDetected(null); })
       .finally(() => { if (!cancelled) setResumeDetecting(false); });
@@ -420,26 +435,51 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
 
     const ranges = computeSliceRanges(supply, PARALLEL_SLICE_COUNT);
 
-    // Detect real per-slice resume points from one bucket listing, instead
-    // of N separate calls — same reasoning as the single-shot export's
-    // auto-detect, just partitioned across ranges.
-    let doneImageCount = 0;
+    // Detect real per-slice resume points from one bucket listing. This
+    // MUST be computed per-range from the actual edition numbers present,
+    // not from a single bucket-wide count — 8 slices run truly in parallel
+    // and do NOT fill editions sequentially from 1 upward, so a raw total
+    // (e.g. 2,286 images) says nothing about which specific editions are
+    // done. Confirmed live after an interrupted run: progress was scattered
+    // roughly evenly across all 8 ranges (304/150/386/300/220/300/258/368),
+    // not a contiguous block. The old code did
+    // `min(doneImageCount, rangeEnd)` per slice, which treated an entire
+    // low-numbered range as "fully done" from a count that really belonged
+    // to work spread across every range — and the server's resume loop
+    // (`if (editionNum <= resumeFrom) continue`) trusts that cutoff
+    // unconditionally, so it would have silently skipped hundreds of
+    // editions that were never actually generated, while reporting the
+    // slice complete.
+    let doneEditions = new Set<number>();
     try {
       const r = await fetch(`/api/filebase/objects?bucket=${encodeURIComponent(bucket)}`);
       if (r.ok) {
         const data = await r.json();
-        doneImageCount = (data.objects ?? []).filter((o: any) => String(o.key ?? o.Key ?? '').startsWith('images/')).length;
+        for (const o of (data.objects ?? [])) {
+          const key = String(o.key ?? o.Key ?? '');
+          const m = key.match(/^images\/(\d+)\.\w+$/);
+          if (m) doneEditions.add(Number(m[1]));
+        }
       }
-    } catch { /* fall back to 0 — every slice starts fresh */ }
+    } catch { /* fall back to empty — every slice starts fresh */ }
+
+    // Per-range resume point = the highest edition such that EVERY edition
+    // from rangeStart+1 up to it is actually present — a true contiguous
+    // prefix within that slice's own range, not a borrowed global count.
+    function contiguousResumePoint(rangeStart: number, rangeEnd: number) {
+      let n = rangeStart;
+      while (n < rangeEnd && doneEditions.has(n + 1)) n++;
+      return n;
+    }
 
     setParSlices(ranges.map(rg => ({
       ...rg,
-      progress: Math.max(0, Math.min(doneImageCount, rg.rangeEnd) - rg.rangeStart),
+      progress: contiguousResumePoint(rg.rangeStart, rg.rangeEnd) - rg.rangeStart,
       status: 'running' as const,
     })));
 
     ranges.forEach((rg, i) => {
-      const sliceResumeFrom = Math.max(rg.rangeStart, Math.min(doneImageCount, rg.rangeEnd));
+      const sliceResumeFrom = contiguousResumePoint(rg.rangeStart, rg.rangeEnd);
       runParallelSliceAttempt(i, rg.rangeStart, rg.rangeEnd, sliceResumeFrom, bucket, 0);
     });
   }
