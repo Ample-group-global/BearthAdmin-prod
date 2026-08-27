@@ -545,7 +545,25 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
         }, 0);
         const weightNote = weightSheets ? `, weights applied for ${weightSheets} layer(s)` : '';
         const rarityNote = raritySheets ? `, rarity applied for ${raritySheets} layer(s)` : '';
-        setExcelMsg(`${matchedSheets} sheet(s) matched, ${appliedCount} trait name(s) applied${weightNote}${rarityNote}.`);
+
+        // Warn when a sheet's own Trait ID column didn't line up with the
+        // uploaded files' real names — the artist's own workbook (rather
+        // than one started from "Download matching template") is the one
+        // case this can happen, since the template's ID column is always
+        // prefilled with the real file stem. Falling back to row-position
+        // still applies the values, but only the template's ID column is
+        // GUARANTEED correct, so this stays visible instead of silent.
+        const idMismatchLayers = parsedLayers.filter(l => {
+          const ids = data.ids[normalizeLayerKey(l.folder)];
+          if (!ids || ids.length !== l.assets.length) return false;
+          const stemSet = new Set(l.assets.map(a => a.stem));
+          return !ids.every(id => stemSet.has(id));
+        }).map(l => l.label);
+        const idWarning = idMismatchLayers.length
+          ? ` ⚠ ${idMismatchLayers.join(', ')}: this sheet's Trait ID column doesn't match your file names — applied by row order instead. For guaranteed-correct results, use "Download matching template" and fill that in instead of your own sheet.`
+          : '';
+
+        setExcelMsg(`${matchedSheets} sheet(s) matched, ${appliedCount} trait name(s) applied${weightNote}${rarityNote}.${idWarning}`);
       } else {
         setExcelMsg(`${matchedSheets} sheet(s) read — names/weights/rarity will apply once you drop the layer folder.`);
       }
