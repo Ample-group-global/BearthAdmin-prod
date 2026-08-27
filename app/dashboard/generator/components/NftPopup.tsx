@@ -1,13 +1,11 @@
 // @ts-nocheck
 'use client';
 import { useRef, useLayoutEffect } from 'react';
+import { TIERS as CANONICAL_TIERS } from '../../../../lib/studio/tiers';
 
-const TIER_COLOR: Record<string, string> = {
-  Legendary: '#F59E0B',
-  Epic:      '#A855F7',
-  Rare:      '#3B82F6',
-  Common:    '#6B7280',
-};
+// Colors come from lib/studio/tiers.ts (single source of truth also used by
+// RarityModal.tsx and RarityTab.tsx) instead of a separate local copy.
+const TIER_COLOR: Record<string, string> = Object.fromEntries(CANONICAL_TIERS.map(t => [t.label, t.color]));
 
 interface NftPopupItem {
   index: number;

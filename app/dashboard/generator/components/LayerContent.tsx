@@ -52,7 +52,7 @@ function TraitNameEditor({ asset, folder, onRenamed }) {
   );
 }
 
-export default function LayerContent({ layer, layerWeights, allWeights, supply, onWeightChange, onLayersChange, onGenerate, onOpenLayerModal }) {
+export default function LayerContent({ layer, layerWeights, allWeights, supply, sessionPrefix, onWeightChange, onLayersChange, onGenerate, onOpenLayerModal }) {
   const [view,      setView]      = useState(layer.assets.length > 0 ? 'advanced' : 'manage');  // 'manage' | 'advanced'
   const [dragOver,  setDragOver]  = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -69,6 +69,11 @@ export default function LayerContent({ layer, layerWeights, allWeights, supply, 
     setUploading(true);
     const form = new FormData();
     form.append('layer', layer.folder);
+    // Without this, files added here land in an unscoped flat key
+    // (layer/filename) instead of this collection's own namespace — a
+    // different artist's own upload can then collide with it. See the
+    // upload route's own comment for the real incident this caused before.
+    if (sessionPrefix) form.append('sessionPrefix', sessionPrefix);
     for (const f of imgs) form.append('files', f);
     await fetch('/api/upload', { method: 'POST', body: form });
     setUploading(false);

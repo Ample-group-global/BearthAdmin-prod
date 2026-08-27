@@ -1,21 +1,29 @@
 // @ts-nocheck
 'use client';
 import { useMemo } from 'react';
+import { TIERS as CANONICAL_TIERS, getTier } from '../../../../lib/studio/tiers';
 
 // ── Tier helpers ──────────────────────────────────────────────────────────────
+// Thresholds/colors come from lib/studio/tiers.ts (the same source
+// RarityModal.tsx uses) so a future threshold change can't drift out of
+// sync here — this file previously reimplemented its own 1/5/15% cutoffs,
+// which is exactly the duplication that caused a real mismatch bug before
+// (see RarityModal.tsx's own comment on this).
 function rarityTier(pct: number) {
-  if (pct <= 1)  return { label: 'Legendary', color: '#F59E0B' };
-  if (pct <= 5)  return { label: 'Epic',      color: '#A855F7' };
-  if (pct <= 15) return { label: 'Rare',      color: '#3B82F6' };
-  return          { label: 'Common',   color: '#6B7280' };
+  const t = getTier(pct / 100);
+  return { label: t.label, color: t.color };
 }
 
-const TIERS = [
-  { label: 'Legendary', color: '#F59E0B', icon: '👑', preRange: '≤ 1%',  postRange: 'Top 1%',  desc: 'Ultra-rare. Highest collector value.' },
-  { label: 'Epic',      color: '#A855F7', icon: '🔮', preRange: '≤ 5%',  postRange: 'Top 5%',  desc: 'Very rare. Strong collector demand.' },
-  { label: 'Rare',      color: '#3B82F6', icon: '🔷', preRange: '≤ 15%', postRange: 'Top 15%', desc: 'Clearly limited. Noticeably scarce.' },
-  { label: 'Common',    color: '#6B7280', icon: '🩶', preRange: '> 15%', postRange: 'Rest',     desc: 'Most frequent. Baseline traits.' },
-];
+// Display-only metadata (icon/description/range copy) layered onto the
+// canonical thresholds — never a second copy of the threshold values
+// themselves.
+const TIER_DISPLAY: Record<string, { icon: string; preRange: string; postRange: string; desc: string }> = {
+  Legendary: { icon: '👑', preRange: '≤ 1%',  postRange: 'Top 1%',  desc: 'Ultra-rare. Highest collector value.' },
+  Epic:      { icon: '🔮', preRange: '≤ 5%',  postRange: 'Top 5%',  desc: 'Very rare. Strong collector demand.' },
+  Rare:      { icon: '🔷', preRange: '≤ 15%', postRange: 'Top 15%', desc: 'Clearly limited. Noticeably scarce.' },
+  Common:    { icon: '🩶', preRange: '> 15%', postRange: 'Rest',     desc: 'Most frequent. Baseline traits.' },
+};
+const TIERS = CANONICAL_TIERS.map(t => ({ label: t.label, color: t.color, ...TIER_DISPLAY[t.label] }));
 
 // ── Tier overview cards ───────────────────────────────────────────────────────
 function TierOverview() {

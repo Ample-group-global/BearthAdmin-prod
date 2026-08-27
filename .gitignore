@@ -46,5 +46,9 @@ tests/
 playwright-report/
 v1-ui-check.ts
 
+# Scratch/debug scripts written during live testing sessions
+_tmp_*.js
+_tmp_*.json
+
 .vercel
 .env*
