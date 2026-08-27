@@ -211,6 +211,12 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
     if (!bucket || !dbJobIdRef.current) return;
     setSvrStatus('running');
     setSvrError('');
+    // Persisted per-job so Download can find the real export bucket even
+    // after a page reload — without this, svrBucket resets to empty on
+    // reload and Download would silently fall back to recompositing from
+    // raw layers instead of reading the already-exported files, producing
+    // metadata that doesn't match what's actually on Filebase (no IPFS CID).
+    try { localStorage.setItem(`nft-export-bucket:${dbJobIdRef.current}`, bucket); } catch { /* storage unavailable — non-fatal */ }
 
     // Elapsed-time clock covers the whole effort (from this first click),
     // not just since the last reconnect — a stall-and-resume shouldn't reset
@@ -417,7 +423,14 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
 
   async function downloadOfflineZip() {
     if (!dbJobIdRef.current) return;
-    const bucket = svrBucket === '__new__' ? svrNewBucket.trim() : svrBucket.trim();
+    let bucket = svrBucket === '__new__' ? svrNewBucket.trim() : svrBucket.trim();
+    if (!bucket) {
+      // svrBucket resets to empty on a page reload — recover the real
+      // export bucket from where startServerExport persisted it, so a
+      // reload doesn't silently downgrade Download to the recompositing
+      // fallback for a collection that was already exported.
+      try { bucket = localStorage.getItem(`nft-export-bucket:${dbJobIdRef.current}`) ?? ''; } catch { /* ignore */ }
+    }
 
     // Fast path: check if a pre-built ZIP exists in Filebase from the last
     // server-side export. If so, use the pre-signed URL directly (a plain
