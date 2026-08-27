@@ -556,9 +556,14 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
   }
 
   // Generates a workbook matching whatever layers are currently dropped —
-  // one sheet per layer folder, a reference Stem column (ignored by the
-  // parser — it only reads whichever column has "name" in its header) plus
-  // a blank Trait Name column in file order for the artist to fill in.
+  // one sheet per layer folder, all 4 columns the parser understands (Trait
+  // ID, Trait Name, Rarity, Weight (%)) so an artist filling this in gets
+  // full name+weight+rarity import, not just names. Trait ID is prefilled
+  // with the actual file stem (not a made-up reference number) so ID-based
+  // matching is GUARANTEED to succeed for every row — do not edit that
+  // column. This deliberately differs from how some artists' own workbooks
+  // are keyed (e.g. a personal catalog number unrelated to file names,
+  // confirmed live to cause silent per-row import failures) by construction.
   function handleDownloadTemplate() {
     if (!lastFilesRef.current) {
       setExcelMsg('Drop your assets folder first — the template is built to match your actual layers and trait counts.');
@@ -567,8 +572,8 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     const { layers: parsedLayers } = parseLayersFromFiles(lastFilesRef.current, {});
     const wb = XLSX.utils.book_new();
     for (const layer of parsedLayers) {
-      const rows = [['Stem (reference only — do not edit)', 'Trait Name']];
-      for (const a of layer.assets) rows.push([a.stem, '']);
+      const rows = [['Trait ID (do not edit)', 'Trait Name', 'Rarity', 'Weight (%)']];
+      for (const a of layer.assets) rows.push([a.stem, '', '', '']);
       const ws = XLSX.utils.aoa_to_sheet(rows);
       const sheetName = layer.folder.slice(0, 31).replace(/[\\/?*[\]:]/g, '-');
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
