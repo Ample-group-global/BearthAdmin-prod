@@ -478,8 +478,13 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.error ?? `Download failed (${resp.status})`);
       }
+      // The fast path can't send a real Content-Length (the ZIP is built
+      // on the fly, exact final size isn't known upfront) — it sends an
+      // estimated total instead, close enough for a progress bar.
+      const estHeader = resp.headers.get('x-estimated-zip-bytes');
       const lenHeader = resp.headers.get('content-length');
-      if (lenHeader) setDlTotalBytes(Number(lenHeader));
+      if (estHeader) setDlTotalBytes(Number(estHeader));
+      else if (lenHeader) setDlTotalBytes(Number(lenHeader));
 
       const reader = resp.body.getReader();
       const chunks: Uint8Array[] = [];

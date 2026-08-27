@@ -62,12 +62,13 @@ export async function GET(
     }
   }
 
-  return new NextResponse(upstream.body, {
-    status: 200,
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "application/zip",
-      "Content-Disposition":
-        upstream.headers.get("content-disposition") ?? 'attachment; filename="bearth-nft-collection.zip"',
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": upstream.headers.get("content-type") ?? "application/zip",
+    "Content-Disposition":
+      upstream.headers.get("content-disposition") ?? 'attachment; filename="bearth-nft-collection.zip"',
+  };
+  const estimatedBytes = upstream.headers.get("x-estimated-zip-bytes");
+  if (estimatedBytes) headers["X-Estimated-Zip-Bytes"] = estimatedBytes;
+
+  return new NextResponse(upstream.body, { status: 200, headers });
 }
