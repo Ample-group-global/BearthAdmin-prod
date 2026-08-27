@@ -201,6 +201,16 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       .catch(() => { });
   }, [svrStatus]);
 
+  // ── Restore "export done" from a prior session, so a reload doesn't hide
+  // Download for a job that already finished exporting ──────────────────────
+  const [exportDone, setExportDone] = useState(false);
+  useEffect(() => {
+    if (!dbSaved || !dbJobIdRef.current) return;
+    try {
+      if (localStorage.getItem(`nft-export-done:${dbJobIdRef.current}`) === '1') setExportDone(true);
+    } catch { /* ignore */ }
+  }, [dbSaved]);
+
   // ── Server export helpers ─────────────────────────────────────────────────
   const MAX_AUTO_RESUMES = 100; // tighter 30s stall detection means more (much shorter) cycles per run
   const svrLastProgressRef = useRef(0);
@@ -305,6 +315,10 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         }
         if (pr.status === 'done') {
           setSvrStatus('done');
+          // Persisted so Download stays visible across a reload — the artist
+          // must not have to re-run the whole export just because she
+          // refreshed the page after it already finished.
+          try { localStorage.setItem(`nft-export-done:${dbJobIdRef.current}`, '1'); } catch { /* non-fatal */ }
           if (svrPollRef.current) { clearInterval(svrPollRef.current); svrPollRef.current = null; }
           if (svrTickRef.current) { clearInterval(svrTickRef.current); svrTickRef.current = null; }
           return;
@@ -525,6 +539,135 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
     if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
     return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+
+  // ── Direct-to-folder bulk download ────────────────────────────────────────
+  // Same strategy as scripts/download-filebase-bucket.js: list every object,
+  // skip anything already saved with a matching size (free resumability —
+  // just re-click after a failure/close, no state to track), download the
+  // rest with high concurrency straight from Filebase via presigned URLs
+  // (bypassing the Vercel-proxied API for the actual bytes entirely, so
+  // there's no single-request timeout to hit regardless of collection
+  // size — the real reason the old one-big-zip-stream approach couldn't
+  // work for a real ~5GB collection).
+  const [bulkDlStatus, setBulkDlStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [bulkDlDone, setBulkDlDone] = useState(0);
+  const [bulkDlTotal, setBulkDlTotal] = useState(0);
+  const [bulkDlFailed, setBulkDlFailed] = useState(0);
+  const [bulkDlFolderName, setBulkDlFolderName] = useState('');
+  const [bulkDlError, setBulkDlError] = useState('');
+  const [dlBucket, setDlBucket] = useState('');
+  const BULK_DL_CONCURRENCY = 40;
+  const BULK_DL_URL_BATCH = 500;
+
+  // Pre-fill with the bucket this collection was actually exported to, as a
+  // convenience — but she can still pick a different one. Read-only listing
+  // is a much lower-risk operation than export's write path, where a wrong
+  // guess previously overwrote a bucket that should never have been touched.
+  useEffect(() => {
+    if (dlBucket || !dbJobIdRef.current) return;
+    const svr = svrBucket === '__new__' ? '' : svrBucket.trim();
+    if (svr) { setDlBucket(svr); return; }
+    try {
+      const persisted = localStorage.getItem(`nft-export-bucket:${dbJobIdRef.current}`);
+      if (persisted) setDlBucket(persisted);
+    } catch { /* ignore */ }
+  }, [svrBucket, exportDone]);
+
+  async function downloadAllFilesDirect() {
+    if (!dbJobIdRef.current) return;
+    const effectiveBucket = dlBucket.trim();
+    if (!effectiveBucket) { setBulkDlStatus('error'); setBulkDlError('Select a bucket to download from.'); return; }
+
+    if (!('showDirectoryPicker' in window)) {
+      setBulkDlStatus('error');
+      setBulkDlError('This browser cannot save directly to a folder — use Chrome or Edge.');
+      return;
+    }
+
+    let dirHandle: any;
+    try {
+      dirHandle = await (window as any).showDirectoryPicker();
+    } catch {
+      return; // user cancelled the folder picker — not an error
+    }
+
+    setBulkDlStatus('running');
+    setBulkDlDone(0);
+    setBulkDlFailed(0);
+    setBulkDlError('');
+    setBulkDlFolderName(dirHandle.name ?? '');
+
+    try {
+      const imagesDir = await dirHandle.getDirectoryHandle('images', { create: true });
+      const metadataDir = await dirHandle.getDirectoryHandle('metadata', { create: true });
+
+      const listRes = await fetch(`/api/filebase/objects?bucket=${encodeURIComponent(effectiveBucket)}`);
+      if (!listRes.ok) throw new Error(`Failed to list bucket objects (${listRes.status})`);
+      const { objects } = await listRes.json();
+      const relevant: Array<{ key: string; size: number }> = (objects ?? [])
+        .filter((o: any) => o.key && (o.key.startsWith('images/') || o.key.startsWith('metadata/')))
+        .map((o: any) => ({ key: o.key, size: o.size ?? 0 }));
+
+      setBulkDlTotal(relevant.length);
+
+      // Skip anything already saved locally with the same size — this alone
+      // is the entire resumability mechanism, exactly like the script.
+      const toFetch: Array<{ key: string; size: number }> = [];
+      let alreadyDone = 0;
+      for (const obj of relevant) {
+        const [prefix, filename] = [obj.key.split('/')[0], obj.key.split('/')[1]];
+        const dir = prefix === 'images' ? imagesDir : metadataDir;
+        try {
+          const fh = await dir.getFileHandle(filename);
+          const file = await fh.getFile();
+          if (file.size === obj.size) { alreadyDone++; continue; }
+        } catch { /* doesn't exist yet — needs fetching */ }
+        toFetch.push(obj);
+      }
+      setBulkDlDone(alreadyDone);
+
+      let failedKeys: string[] = [];
+      let doneCount = alreadyDone;
+
+      for (let i = 0; i < toFetch.length; i += BULK_DL_URL_BATCH) {
+        const batch = toFetch.slice(i, i + BULK_DL_URL_BATCH);
+        const urlRes = await fetch('/api/filebase/presigned-urls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bucket: effectiveBucket, keys: batch.map(b => b.key) }),
+        });
+        if (!urlRes.ok) throw new Error(`Failed to get download URLs (${urlRes.status})`);
+        const { urls } = await urlRes.json();
+
+        let cursor = 0;
+        async function worker() {
+          while (cursor < batch.length) {
+            const obj = batch[cursor++];
+            const [prefix, filename] = [obj.key.split('/')[0], obj.key.split('/')[1]];
+            const dir = prefix === 'images' ? imagesDir : metadataDir;
+            try {
+              const resp = await fetch(urls[obj.key]);
+              if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
+              const fh = await dir.getFileHandle(filename, { create: true });
+              const writable = await fh.createWritable();
+              await resp.body.pipeTo(writable);
+              doneCount++;
+              setBulkDlDone(doneCount);
+            } catch {
+              failedKeys.push(obj.key);
+              setBulkDlFailed(f => f + 1);
+            }
+          }
+        }
+        await Promise.all(Array.from({ length: BULK_DL_CONCURRENCY }, worker));
+      }
+
+      setBulkDlStatus('done');
+    } catch (e: any) {
+      setBulkDlStatus('error');
+      setBulkDlError(e.message ?? 'Download failed');
+    }
   }
 
   const [zipReady, setZipReady] = useState(false);
@@ -1129,8 +1272,12 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         )}
       </div>
 
-      {/* ── Download All NFTs ── */}
-      {dbSaved && dbJobIdRef.current && (
+      {/* ── Download All NFTs (legacy single-stream ZIP) — kept in source per
+          explicit instruction, not deleted, just no longer wired to the
+          visible button. Doesn't scale to a real ~5GB collection (no
+          maxDuration works for one continuous stream that large); superseded
+          by the direct-to-folder downloader below. ── */}
+      {false && dbSaved && dbJobIdRef.current && (svrStatus === 'done' || exportDone) && (
         <div className="exp-fb-card exp-svr-card" data-testid="offline-download-section">
           <div className="exp-fb-header">
             <div className="exp-fb-title">Download All NFTs</div>
@@ -1181,6 +1328,72 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
             <div className="exp-banner exp-banner-error" style={{ marginTop: 12 }}>
               <span>Download failed: {dlError}</span>
               <button className="exp-retry-btn" onClick={downloadOfflineZip}>↺ Retry</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Download All NFTs (direct-to-folder) — hidden until export to
+          Filebase has actually finished; before that the artist can only
+          view NFTs above, not download them (nothing real to download yet).
+          Same strategy as scripts/download-filebase-bucket.js: per-file,
+          skip-if-already-saved resumability, no single-request timeout. ── */}
+      {dbSaved && dbJobIdRef.current && (svrStatus === 'done' || exportDone) && (
+        <div className="exp-fb-card exp-svr-card" data-testid="offline-download-section">
+          <div className="exp-fb-header">
+            <div className="exp-fb-title">Download All NFTs</div>
+            <div className="exp-fb-sub">
+              Pick a folder — images and metadata save directly into it, and re-running only fetches what's missing.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+            <select
+              className="exp-fb-input"
+              style={{ minWidth: 200 }}
+              value={dlBucket}
+              onChange={e => setDlBucket(e.target.value)}
+              disabled={bulkDlStatus === 'running'}
+            >
+              {bucketList.length === 0 && <option value="">— no buckets found —</option>}
+              {bucketList.length > 0 && <option value="">— select bucket —</option>}
+              {bucketList.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+            <button
+              className="btn btn-primary"
+              onClick={downloadAllFilesDirect}
+              disabled={bulkDlStatus === 'running' || !dlBucket.trim()}
+              data-testid="download-offline-zip-btn"
+            >
+              ⬇ {bulkDlStatus === 'running' ? 'Downloading…' : `Download ${supply.toLocaleString()} NFTs + Metadata`}
+            </button>
+          </div>
+
+          {bulkDlStatus === 'running' && (
+            <div style={{ marginTop: 12 }}>
+              {bulkDlTotal > 0 && <ProgressBar value={bulkDlDone} max={bulkDlTotal} />}
+              <div className="exp-step-count">
+                {bulkDlDone.toLocaleString()} / {bulkDlTotal.toLocaleString()} files
+                {bulkDlFailed > 0 ? ` · ${bulkDlFailed.toLocaleString()} failed so far` : ''}
+              </div>
+            </div>
+          )}
+
+          {bulkDlStatus === 'done' && (
+            <div className="exp-banner exp-banner-saved" style={{ marginTop: 12 }}>
+              <CheckIcon size={15} />
+              <span>
+                Saved {bulkDlDone.toLocaleString()} files to folder "{bulkDlFolderName}"
+                {bulkDlFailed > 0 ? ` — ${bulkDlFailed.toLocaleString()} failed, click Download again to retry just those` : ''}.
+              </span>
+            </div>
+          )}
+
+          {bulkDlStatus === 'error' && (
+            <div className="exp-banner exp-banner-error" style={{ marginTop: 12 }}>
+              <span>Download failed: {bulkDlError}</span>
+              <button className="exp-retry-btn" onClick={downloadAllFilesDirect}>↺ Retry</button>
             </div>
           )}
         </div>
