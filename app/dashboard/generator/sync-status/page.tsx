@@ -38,6 +38,13 @@ export default function SyncStatusPage() {
   const [bucketList,     setBucketList]     = useState<string[]>([]);
   const [bucketsLoading, setBucketsLoading] = useState(false);
   const pollRefs = useRef<Record<string, any>>({});
+  // Per-collection stall tracking — mirrors ExportPanel.tsx's resumable
+  // export flow, so a large export started from this page recovers from a
+  // killed invocation the same way instead of hanging on a dead exportId.
+  const lastProgressRef = useRef<Record<string, number>>({});
+  const lastProgressTimeRef = useRef<Record<string, number>>({});
+  const resumeCountRef = useRef<Record<string, number>>({});
+  const MAX_AUTO_RESUMES = 100;
 
   // ── Fetch collection sync status ──────────────────────────────────────────
   const fetchStatus = useCallback(async () => {
@@ -66,7 +73,8 @@ export default function SyncStatusPage() {
       .then(data => {
         const names: string[] = (data.buckets ?? []).map((b: any) => b.name).filter(Boolean);
         setBucketList(names);
-        setExportBucket(prev => prev || names[0] || '');
+        // Never auto-select a bucket — see the identical fix/incident note
+        // in ExportPanel.tsx. The admin must explicitly pick one every time.
       })
       .catch(() => {})
       .finally(() => setBucketsLoading(false));
@@ -90,20 +98,43 @@ export default function SyncStatusPage() {
     const bucket = exportBucket === '__new__' ? newBucket.trim() : exportBucket;
     if (!bucket) return;
     setExportModal(null);
-    patchRow(collectionId, { filebase: 'running', message: 'Starting export…' });
+    resumeCountRef.current[collectionId] = 0;
+    await runFilebaseExportAttempt(collectionId, jobId, bucket, 0);
+  }
+
+  async function runFilebaseExportAttempt(collectionId: string, jobId: string, bucket: string, resumeFrom: number) {
+    const key = `${collectionId}:fb`;
+    lastProgressRef.current[collectionId] = resumeFrom;
+    lastProgressTimeRef.current[collectionId] = Date.now();
+    patchRow(collectionId, {
+      filebase: 'running',
+      message: resumeFrom > 0 ? `Resuming from ${resumeFrom.toLocaleString()}…` : 'Starting export…',
+    });
 
     try {
       const r = await fetch('/api/nft-gen/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collectionId, jobId, bucket, syncToRecords: false }),
+        body: JSON.stringify({ collectionId, jobId, bucket, syncToRecords: false, resumeFrom }),
       });
+      let exportId: string;
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        throw new Error(err.error ?? `HTTP ${r.status}`);
+        // An export already running for this collection isn't a failure —
+        // attach to its live progress instead of erroring out, same as
+        // ExportPanel.tsx's main Studio export flow.
+        if (r.status === 409 && err.exportId) {
+          exportId = err.exportId;
+          lastProgressRef.current[collectionId] = err.progress ?? resumeFrom;
+          lastProgressTimeRef.current[collectionId] = Date.now();
+          patchRow(collectionId, { message: err.phase ?? 'Attached to an in-progress export…' });
+        } else {
+          throw new Error(err.error ?? `HTTP ${r.status}`);
+        }
+      } else {
+        exportId = (await r.json()).exportId;
       }
-      const { exportId } = await r.json();
-      const key = `${collectionId}:fb`;
+
       let tick = 0;
       pollRefs.current[key] = setInterval(async () => {
         try {
@@ -111,15 +142,15 @@ export default function SyncStatusPage() {
           if (!pr.ok) return;
           const state = await pr.json();
           patchRow(collectionId, { message: state.phase ?? '' });
-          // The phase text above updates every tick, but the numeric "X / Y"
-          // badge comes from a separate DB-aggregate count that otherwise
-          // only refreshes once the whole export finishes — during a long
-          // 2,500+ item export that left the badge frozen at its starting
-          // value the entire time, making a genuinely-progressing export
-          // look stalled. Refresh that count periodically too (not every
-          // tick — this hits the DB for every collection, not just this row).
           tick++;
           if (tick % 3 === 0) fetchStatus();
+
+          const newProgress = state.progress ?? 0;
+          if (newProgress !== lastProgressRef.current[collectionId]) {
+            lastProgressRef.current[collectionId] = newProgress;
+            lastProgressTimeRef.current[collectionId] = Date.now();
+          }
+
           if (state.status === 'done' || state.status === 'error') {
             clearInterval(pollRefs.current[key]);
             delete pollRefs.current[key];
@@ -128,6 +159,26 @@ export default function SyncStatusPage() {
               message:  state.status === 'done' ? `${state.total ?? 0} NFTs uploaded` : (state.error ?? 'Export failed'),
             });
             fetchStatus();
+            return;
+          }
+
+          // Same 30s stall threshold as ExportPanel.tsx — a premature
+          // reconnect against a still-alive invocation just attaches to it
+          // (see the 409 handling above), so tightening this costs nothing.
+          const stalledForMs = Date.now() - lastProgressTimeRef.current[collectionId];
+          if (stalledForMs > 30_000) {
+            clearInterval(pollRefs.current[key]);
+            delete pollRefs.current[key];
+            const resumeCount = (resumeCountRef.current[collectionId] ?? 0) + 1;
+            resumeCountRef.current[collectionId] = resumeCount;
+            if (resumeCount > MAX_AUTO_RESUMES) {
+              patchRow(collectionId, {
+                filebase: 'error',
+                message: `Export stalled at ${newProgress.toLocaleString()} after ${MAX_AUTO_RESUMES} automatic resume attempts.`,
+              });
+              return;
+            }
+            runFilebaseExportAttempt(collectionId, jobId, bucket, newProgress);
           }
         } catch { /* retry next tick */ }
       }, 2000);

@@ -4,6 +4,16 @@ import { getSessionToken } from "../../../../../../lib/api-proxy";
 
 const API_BASE = process.env.BEARTH_API_URL!;
 
+// The blanket app/api/nft-gen/** maxDuration (60s, vercel.json) is fine for
+// normal API calls but kills this route specifically — it's a long-lived
+// stream, not a quick request/response, and a real 9999-item collection
+// takes several minutes to stream through. Vercel was truncating the
+// response mid-archive at the 60s mark, producing a ZIP with no End Of
+// Central Directory record (confirmed: a real download landed at ~27MB,
+// far short of the expected size, and every unzip tool rejected it).
+// 300s is the safe ceiling supported on every Vercel plan tier.
+export const maxDuration = 300;
+
 // Node's fetch() (undici under the hood) applies a default headersTimeout/
 // bodyTimeout to every request unless told otherwise. BearthApi-V1 already
 // disables its own socket idle timeout for this route (req.socket.setTimeout(0)
