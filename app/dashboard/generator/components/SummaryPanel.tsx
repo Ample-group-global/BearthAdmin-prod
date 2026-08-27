@@ -1,6 +1,6 @@
 // @ts-nocheck
 'use client';
-import { TIERS, getTier } from '../../../../lib/studio/tiers';
+import { TIERS, getTier, resolveTier } from '../../../../lib/studio/tiers';
 
 export default function SummaryPanel({ layer, weights, supply, onGenerate }) {
   if (!layer) return <aside className="summary"><div className="sh">Layer Stats</div><div className="empty">Select a layer</div></aside>;
@@ -11,7 +11,7 @@ export default function SummaryPanel({ layer, weights, supply, onGenerate }) {
   const tierCounts = Object.fromEntries(TIERS.map(t => [t.label, 0]));
   layer.assets.forEach(a => {
     const prob = totalW > 0 ? (ws[a.stem] ?? 0) / totalW : 0;
-    tierCounts[getTier(prob).label]++;
+    tierCounts[resolveTier(a.rarityTier, getTier(prob)).label]++;
   });
 
   const active = layer.assets.filter(a => (ws[a.stem] ?? 0) > 0);
@@ -58,7 +58,7 @@ export default function SummaryPanel({ layer, weights, supply, onGenerate }) {
           {rarest.map(a => {
             const w    = ws[a.stem] ?? 0;
             const prob = totalW > 0 ? w / totalW : 0;
-            const tier = getTier(prob);
+            const tier = resolveTier(a.rarityTier, getTier(prob));
             const exp  = Math.round(prob * supply);
             return (
               <div className="rare-item" key={a.stem}>
