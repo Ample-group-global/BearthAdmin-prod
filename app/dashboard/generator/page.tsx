@@ -402,13 +402,26 @@ export default function Page() {
   }
 
   function resetCollection() {
+    // Only clean up THIS session's own uploaded layer folder (its random
+    // session prefix, e.g. "umt9sfflbxu1zrk"), never the whole shared
+    // bucket — bearth-layers holds every artist's layers side by side, and
+    // a bucket-wide wipe here previously destroyed other artists'/other
+    // collections' files the instant anyone clicked "Start a new
+    // collection." No uploaded layers yet means nothing to clean up.
+    const sessionPrefix = layers[0]?.assets[0]?.rel?.split('/')[0];
     setCollection(DEFAULT_COLLECTION);
     setCollectionId(null);
     setSessionRestored(false);
     setSyncError('');
     setLayers([]);
     fetch('/api/session/collection', { method: 'DELETE' }).catch(() => {});
-    fetch('/api/nft-gen/layers/clear-bucket', { method: 'POST' }).catch(() => {});
+    if (sessionPrefix) {
+      fetch('/api/nft-gen/layers/clear-bucket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefix: sessionPrefix }),
+      }).catch(() => {});
+    }
   }
 
   const activeLayer = layers.find(l => l.folder === activeFolder) ?? null;
