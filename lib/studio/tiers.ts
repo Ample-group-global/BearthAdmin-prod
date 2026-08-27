@@ -19,3 +19,17 @@ export function getTier(prob: any) {
   if (prob <= 0) return DISABLED_TIER;
   return TIERS.find(t => prob <= t.max) ?? TIERS[TIERS.length - 1];
 }
+
+// A trait's badge prefers, in order: the artist's own explicit classification
+// (manually picked, or Excel-supplied via asset.rarityTier) over a fresh
+// weight computation that can land in a different band. Single source of
+// truth for this preference -- RarityModal.tsx used to define its own local
+// copy while AssetCard.tsx/AssetGrid.tsx never applied the preference at all
+// and always showed the live-computed tier regardless of what the artist
+// actually set, which meant the SAME trait could show two different tiers
+// depending on which screen you were looking at.
+export function resolveTier(explicitTierLabel: string | null | undefined, liveTier: any) {
+  if (!explicitTierLabel) return liveTier;
+  const match = TIERS.find(t => t.label.toLowerCase() === explicitTierLabel.toLowerCase());
+  return match ?? liveTier;
+}

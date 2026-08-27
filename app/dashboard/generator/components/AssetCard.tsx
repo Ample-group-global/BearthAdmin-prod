@@ -1,6 +1,7 @@
 // @ts-nocheck
 'use client';
 import { calcRarity, positionForProb } from '../../../../lib/studio/probability';
+import { resolveTier } from '../../../../lib/studio/tiers';
 import { useLayerFiles } from '../LayerFilesContext';
 
 // Clicking a card used to open its own single-trait modal (CardModal, removed) —
@@ -9,7 +10,12 @@ import { useLayerFiles } from '../LayerFilesContext';
 // kind of editing was confusing; there's exactly one now. The inline slider on
 // the card itself still lets you drag weight without opening anything.
 export default function AssetCard({ asset, weight, totalWeight, supply, onChange, onDelete, onOpen }) {
-  const { tier, pct } = calcRarity(weight, totalWeight, supply);
+  const { tier: liveTier, pct } = calcRarity(weight, totalWeight, supply);
+  // Prefers the artist's own explicit classification (manually picked, or
+  // Excel-supplied) over the live weight computation — this card used to
+  // always show the live tier regardless of what was actually set, so the
+  // same trait could show "Epic" here and "Rare" in the Rarity modal.
+  const tier = resolveTier(asset.rarityTier, liveTier);
   const { getBlobUrl } = useLayerFiles();
 
   // Tier zone positions on 0-100 slider scale (same math as the layer modal)

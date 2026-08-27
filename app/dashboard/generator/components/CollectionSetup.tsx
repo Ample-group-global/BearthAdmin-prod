@@ -41,13 +41,17 @@ function parseTraitNamesFromWorkbook(workbook) {
   const result = {};
   const resultWeights = {};
   const resultRarities = {};
+  const resultIds = {};
   for (const sheetName of workbook.SheetNames) {
     // raw: false — a weight cell the artist formatted as an Excel percentage
     // (not typed as text) stores its underlying value as a fraction (2.78%
     // is stored as 0.0278); reading raw would silently import a ~100x-wrong
     // weight for that one cell. raw: false always returns the same formatted
     // display string ("2.78%") regardless of how the cell was entered, so
-    // weight/name/rarity all parse consistently either way.
+    // weight/name/rarity all parse consistently either way — and the same
+    // safety applies to whatever raw type Excel stored the ID/stem column
+    // as (plain text, a number, a date-like autoformat) since raw:false
+    // always yields the displayed string either way.
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
     if (!rows.length) continue;
     const header = rows[0].map(h => String(h || '').trim().toLowerCase());
@@ -58,6 +62,11 @@ function parseTraitNamesFromWorkbook(workbook) {
     // already covers anything with "weight" in it, so this only matches a
     // separate classification column (e.g. "Rarity", "Rarity Tier").
     const rarityColIdx = header.findIndex(h => h.includes('rarity') && !h.includes('weight'));
+    // "Trait ID" / "Stem" / "Code" — the artist's own file-code column
+    // (e.g. "0-1"), when present. Lets rows be matched to the actual
+    // uploaded file by real ID instead of assuming Excel row order exactly
+    // matches the files' sorted order — see below.
+    const idColIdx = header.findIndex(h => h.includes('id') || h.includes('stem') || h.includes('code'));
     // Stop at the first fully-blank row rather than skipping over it — a
     // mid-sheet blank row silently shifts every later name onto the wrong
     // trait (count still "matches" if we just filtered blanks out, since the
@@ -68,6 +77,7 @@ function parseTraitNamesFromWorkbook(workbook) {
     const names = [];
     const weights = [];
     const rarities = [];
+    const ids = [];
     for (const r of rows.slice(1)) {
       if (!r.some(c => String(c ?? '').trim() !== '')) break;
       const name = String(r[nameColIdx] ?? '').trim();
@@ -75,6 +85,7 @@ function parseTraitNamesFromWorkbook(workbook) {
       names.push(name);
       weights.push(weightColIdx === -1 ? null : parseWeightCell(r[weightColIdx]));
       rarities.push(rarityColIdx === -1 ? null : parseRarityCell(r[rarityColIdx]));
+      ids.push(idColIdx === -1 ? null : String(r[idColIdx] ?? '').trim());
     }
     if (names.length) {
       const key = normalizeLayerKey(sheetName);
@@ -88,9 +99,12 @@ function parseTraitNamesFromWorkbook(workbook) {
       // and applying the rest positionally around a hole would misalign every
       // trait after it.
       if (rarities.length && rarities.every(t => t != null)) resultRarities[key] = rarities;
+      // Same guard for IDs — a blank ID cell means this sheet can't be
+      // trusted for ID-based matching, fall back to positional.
+      if (ids.length && ids.every(id => id)) resultIds[key] = ids;
     }
   }
-  return { names: result, weights: resultWeights, rarities: resultRarities };
+  return { names: result, weights: resultWeights, rarities: resultRarities, ids: resultIds };
 }
 
 function deriveLabelFromFolder(fname) {
@@ -132,6 +146,7 @@ function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
   const excelNames = excelData.names ?? {};
   const excelWeights = excelData.weights ?? {};
   const excelRarities = excelData.rarities ?? {};
+  const excelIds = excelData.ids ?? {};
   const groups = new Map(); // folder -> [{ file, stem, rel }]
   const fileMap = new Map(); // rel -> File
 
@@ -175,21 +190,44 @@ function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
       }))
       .sort((a, b) => a.stem.localeCompare(b.stem, undefined, { numeric: true, sensitivity: 'base' }));
 
-    // Positional Excel names, only when the matched sheet's row count exactly
-    // equals this layer's trait count — a mismatch means the sheet doesn't
-    // actually correspond 1:1 to these files, so we don't guess.
     const layerKey = normalizeLayerKey(folder);
     const namesForLayer = excelNames[layerKey];
-    if (namesForLayer && namesForLayer.length === assets.length) {
-      assets.forEach((a, i) => { a.name = namesForLayer[i]; });
-    }
     const weightsForLayer = excelWeights[layerKey];
-    if (weightsForLayer && weightsForLayer.length === assets.length) {
-      assets.forEach((a, i) => { a.defaultWeight = weightsForLayer[i]; });
-    }
     const raritiesForLayer = excelRarities[layerKey];
-    if (raritiesForLayer && raritiesForLayer.length === assets.length) {
-      assets.forEach((a, i) => { a.rarityTier = raritiesForLayer[i]; });
+    const idsForLayer = excelIds[layerKey];
+
+    // Prefer matching by the artist's own Trait ID/Stem column value against
+    // each file's real stem — robust to the Excel rows being in a different
+    // order than the files' sorted order (alphabetized, manually reordered,
+    // rows inserted/removed). Row-position matching used to be the ONLY
+    // path: if a sheet's row order ever didn't match the files' sorted
+    // order, names/weights/rarities would silently attach to the wrong
+    // trait with no warning, since row COUNT matching alone can't catch
+    // that. Falls back to positional matching only when no ID column
+    // exists on the sheet at all.
+    if (idsForLayer && idsForLayer.length === assets.length) {
+      const rowByStem = new Map(idsForLayer.map((id, i) => [id, i]));
+      assets.forEach(a => {
+        const i = rowByStem.get(a.stem);
+        if (i == null) return; // this file's stem has no matching Trait ID row — leave its default
+        if (namesForLayer)    a.name = namesForLayer[i];
+        if (weightsForLayer)  a.defaultWeight = weightsForLayer[i];
+        if (raritiesForLayer) a.rarityTier = raritiesForLayer[i];
+      });
+    } else {
+      // Positional fallback (no ID column on this sheet) — only when the
+      // matched sheet's row count exactly equals this layer's trait count,
+      // a mismatch means the sheet doesn't actually correspond 1:1 to
+      // these files, so we don't guess.
+      if (namesForLayer && namesForLayer.length === assets.length) {
+        assets.forEach((a, i) => { a.name = namesForLayer[i]; });
+      }
+      if (weightsForLayer && weightsForLayer.length === assets.length) {
+        assets.forEach((a, i) => { a.defaultWeight = weightsForLayer[i]; });
+      }
+      if (raritiesForLayer && raritiesForLayer.length === assets.length) {
+        assets.forEach((a, i) => { a.rarityTier = raritiesForLayer[i]; });
+      }
     }
 
     // Disambiguate duplicate display names (same logic as server-side buildCache)

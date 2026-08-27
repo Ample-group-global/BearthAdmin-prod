@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client';
 import { useState, useMemo } from 'react';
-import { TIERS, getTier }    from '../../../../lib/studio/tiers';
+import { TIERS, getTier, resolveTier } from '../../../../lib/studio/tiers';
 import AssetCard              from './AssetCard';
 
 export default function AssetGrid({ layer, layerWeights, supply, onWeightChange, onLayersChange, onOpenLayerModal }) {
@@ -15,22 +15,26 @@ export default function AssetGrid({ layer, layerWeights, supply, onWeightChange,
       a.stem.localeCompare(b.stem, undefined, { numeric: true, sensitivity: 'base' })
     ), [layer.assets]);
 
+  // Same preference as the individual cards (AssetCard.tsx): the artist's
+  // own explicit classification over a live weight computation. These
+  // counts/filters used to always use the live tier only, so a trait could
+  // show e.g. "Epic" on its own card but never appear when filtering by
+  // Epic if its live-computed tier actually landed in a different band.
+  function tierFor(a) {
+    const prob = totalW > 0 ? (ws[a.stem] ?? 0) / totalW : 0;
+    return resolveTier(a.rarityTier, getTier(prob));
+  }
+
   const tierCounts = useMemo(() => {
     const counts = {};
     TIERS.forEach(t => { counts[t.label] = 0; });
-    sortedAssets.forEach(a => {
-      const prob = totalW > 0 ? (ws[a.stem] ?? 0) / totalW : 0;
-      counts[getTier(prob).label]++;
-    });
+    sortedAssets.forEach(a => { counts[tierFor(a).label]++; });
     return counts;
   }, [sortedAssets, ws, totalW]);
 
   const visible = filterTier === 'all'
     ? sortedAssets
-    : sortedAssets.filter(a => {
-        const prob = totalW > 0 ? (ws[a.stem] ?? 0) / totalW : 0;
-        return getTier(prob).label.toLowerCase() === filterTier;
-      });
+    : sortedAssets.filter(a => tierFor(a).label.toLowerCase() === filterTier);
 
   async function handleDelete(asset) {
     if (!asset.id) return;

@@ -1,21 +1,16 @@
 // @ts-nocheck
 'use client';
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { TIER_PRESET_WEIGHTS, TIERS, DISABLED_TIER } from '../../../../lib/studio/tiers';
+import { TIER_PRESET_WEIGHTS, TIERS, DISABLED_TIER, resolveTier } from '../../../../lib/studio/tiers';
 import { calcRarity, positionForProb } from '../../../../lib/studio/probability';
 import { useLayerFiles } from '../LayerFilesContext';
 import RulesTabContent from './RulesTabContent';
 
-// The badge shown for a trait prefers, in order: a manual override picked
-// from this session's dropdown, the artist's own Excel-supplied "Rarity"
-// column, then finally the live weight-vs-total computation everything used
-// to always use. Percentage (%) always stays live — only the discrete tier
-// label/color can come from an authored source instead of being recomputed.
-function resolveTier(explicitTierLabel, liveTier) {
-  if (!explicitTierLabel) return liveTier;
-  const match = TIERS.find(t => t.label.toLowerCase() === explicitTierLabel.toLowerCase());
-  return match ?? liveTier;
-}
+// resolveTier (badge prefers: manual override > Excel-supplied rarity >
+// live weight computation) now lives in lib/studio/tiers.ts, shared with
+// AssetCard.tsx/AssetGrid.tsx — this used to be a local copy only this file
+// applied, so the SAME trait could show a different tier here than in the
+// main Organize grid.
 
 // Target probability for each tier's "quick assign" preset, derived from the
 // same TIERS thresholds the live tier badge uses — so picking a tier from the
