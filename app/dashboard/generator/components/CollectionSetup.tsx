@@ -207,19 +207,22 @@ function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
     //
     // But the ID column isn't always a file-stem at all — some sheets use
     // the artist's own catalog numbering (e.g. "46023"), unrelated to how
-    // the files happen to be named on disk ("1-1.png"). Confirmed live:
-    // two full layers (36 traits) matched zero rows via ID and every trait
-    // silently kept its default weight=1/tier=null, while the UI still
-    // reported "weights applied" for that layer since a *different* sheet
-    // in the same workbook did have a real file-stem ID column. Falls back
-    // to positional matching whenever the ID column exists but matches
-    // none of this layer's actual files — not just when it's absent.
+    // the files happen to be named on disk ("1-1.png"). Worse, a sheet can
+    // MIX the two schemes row-by-row: confirmed live, one layer's Excel had
+    // its first row ("None", the default/base item) keyed by real file-stem
+    // ("6-0") while every other row used a catalog number — so ID matching
+    // silently succeeded for 1 trait and defaulted the other 23 with no
+    // warning, while the UI still reported "weights applied" for the whole
+    // layer. A partial match means the ID column can't be trusted for this
+    // sheet at all (positional order is then the only reliable
+    // correspondence) — only treat IDs as authoritative when EVERY trait's
+    // stem is found, otherwise fall back to positional for the whole layer.
     const rowByStem = idsForLayer && idsForLayer.length === assets.length
       ? new Map(idsForLayer.map((id, i) => [id, i]))
       : null;
     const idMatchCount = rowByStem ? assets.filter(a => rowByStem.has(a.stem)).length : 0;
 
-    if (idMatchCount > 0) {
+    if (idMatchCount === assets.length && idMatchCount > 0) {
       assets.forEach(a => {
         const i = rowByStem.get(a.stem);
         if (i == null) return; // this file's stem has no matching Trait ID row — leave its default
