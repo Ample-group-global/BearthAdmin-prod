@@ -11,8 +11,11 @@ const API_BASE = process.env.BEARTH_API_URL!;
 // response mid-archive at the 60s mark, producing a ZIP with no End Of
 // Central Directory record (confirmed: a real download landed at ~27MB,
 // far short of the expected size, and every unzip tool rejected it).
-// 300s is the safe ceiling supported on every Vercel plan tier.
-export const maxDuration = 300;
+// Matches BearthApi-V1's own maxDuration (also raised to 800s) — this
+// proxy is the client of that upstream call, so it must allow at least
+// as long or it becomes the new bottleneck regardless of what the API
+// itself supports.
+export const maxDuration = 800;
 
 // Node's fetch() (undici under the hood) applies a default headersTimeout/
 // bodyTimeout to every request unless told otherwise. BearthApi-V1 already
