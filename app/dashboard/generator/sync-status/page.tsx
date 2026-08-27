@@ -33,6 +33,18 @@ export default function SyncStatusPage() {
   const [rowStates,      setRowStates]      = useState<Record<string, RowState>>({});
   const [exportModal,    setExportModal]    = useState<{ collectionId: string; jobId: string; name: string } | null>(null);
   const [recordsModal,   setRecordsModal]   = useState<{ collectionId: string; jobId: string; name: string; count: number } | null>(null);
+  // Set only when a sync attempt hit the "nft_records already holds a
+  // different collection's data" conflict — offers force-retry instead of
+  // just dead-ending on the error, since force was already supported
+  // server-side with no way to reach it from this page.
+  const [forceConflict,  setForceConflict]  = useState<{ collectionId: string; jobId: string; name: string; message: string } | null>(null);
+  // Separate, deliberately more alarming modal — this wipes nft_records
+  // entirely before rebuilding it from a bucket's real files, unlike the
+  // per-collection sync above which only ever adds/updates rows.
+  const [clearResyncModal, setClearResyncModal] = useState(false);
+  const [clearResyncBucket, setClearResyncBucket] = useState('');
+  const [clearResyncStatus, setClearResyncStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [clearResyncMessage, setClearResyncMessage] = useState('');
   const [exportBucket,   setExportBucket]   = useState('');
   const [newBucket,      setNewBucket]      = useState('');
   const [bucketList,     setBucketList]     = useState<string[]>([]);
@@ -64,9 +76,9 @@ export default function SyncStatusPage() {
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
-  // Load bucket list when modal opens
+  // Load bucket list when either modal that needs it opens
   useEffect(() => {
-    if (!exportModal) return;
+    if (!exportModal && !clearResyncModal) return;
     setBucketsLoading(true);
     fetch('/api/filebase/buckets')
       .then(r => r.ok ? r.json() : { buckets: [] })
@@ -78,7 +90,7 @@ export default function SyncStatusPage() {
       })
       .catch(() => {})
       .finally(() => setBucketsLoading(false));
-  }, [exportModal]);
+  }, [exportModal, clearResyncModal]);
 
   // Cleanup all polling intervals on unmount
   useEffect(() => () => { Object.values(pollRefs.current).forEach(clearInterval); }, []);
@@ -188,26 +200,76 @@ export default function SyncStatusPage() {
   }
 
   // ── Records sync ──────────────────────────────────────────────────────────
-  async function startRecordsSync() {
-    if (!recordsModal) return;
-    const { collectionId, jobId } = recordsModal;
-    setRecordsModal(null);
-    patchRow(collectionId, { records: 'running', message: 'Syncing to NFT Records…' });
+  async function runRecordsSync(collectionId: string, jobId: string, name: string, force: boolean) {
+    patchRow(collectionId, { records: 'running', message: force ? 'Force syncing to NFT Records…' : 'Syncing to NFT Records…' });
     try {
       const r = await fetch('/api/nft-gen/export/sync-records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId }),
+        body: JSON.stringify({ jobId, force }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        throw new Error(err.error ?? `HTTP ${r.status}`);
+        const msg = err.error ?? `HTTP ${r.status}`;
+        // Server-supported force retry existed with no way to reach it from
+        // here — a real attempt just dead-ended on this exact message with
+        // no path forward except a direct API call.
+        if (!force && r.status === 409 && msg.includes('already holds data for')) {
+          patchRow(collectionId, { records: 'idle', message: '' });
+          setForceConflict({ collectionId, jobId, name, message: msg });
+          return;
+        }
+        throw new Error(msg);
       }
       const { synced } = await r.json();
       patchRow(collectionId, { records: 'done', message: `${synced.toLocaleString()} records synced` });
       fetchStatus();
     } catch (e: any) {
       patchRow(collectionId, { records: 'error', message: e.message ?? 'Sync failed' });
+    }
+  }
+  function startRecordsSync() {
+    if (!recordsModal) return;
+    const { collectionId, jobId, name } = recordsModal;
+    setRecordsModal(null);
+    runRecordsSync(collectionId, jobId, name, false);
+  }
+  function forceRecordsSync() {
+    if (!forceConflict) return;
+    const { collectionId, jobId, name } = forceConflict;
+    setForceConflict(null);
+    runRecordsSync(collectionId, jobId, name, true);
+  }
+
+  // ── Clear & resync all from Filebase ──────────────────────────────────────
+  // Deliberately separate from the per-collection sync above: this deletes
+  // EVERY row in nft_records first, then rebuilds it from whichever bucket
+  // is given, using that bucket's real files as the source of truth — for
+  // recovering from nft_records being lost or corrupted, or switching which
+  // collection it holds. The backend route already required an explicit
+  // bucket (no guessing, after a real incident where an unrelated bucket's
+  // data got wiped); this only ever exposes that same requirement in the UI.
+  async function startClearResync() {
+    if (!clearResyncBucket.trim()) return;
+    setClearResyncStatus('running');
+    setClearResyncMessage('Deleting NFT Records and rebuilding from Filebase…');
+    try {
+      const r = await fetch('/api/nft-gen/jobs/sync-from-filebase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bucket: clearResyncBucket.trim() }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error ?? `HTTP ${r.status}`);
+      }
+      const { synced, skipped } = await r.json();
+      setClearResyncStatus('done');
+      setClearResyncMessage(`${synced.toLocaleString()} NFTs synced from ${clearResyncBucket}${skipped ? `, ${skipped} skipped` : ''}.`);
+      fetchStatus();
+    } catch (e: any) {
+      setClearResyncStatus('error');
+      setClearResyncMessage(e.message ?? 'Clear & resync failed');
     }
   }
 
@@ -231,12 +293,21 @@ export default function SyncStatusPage() {
           <span style={{ color: 'var(--border)', margin: '0 4px' }}>›</span>
           <h1 style={styles.pageTitle}>Collection Sync Status</h1>
         </div>
-        <button onClick={fetchStatus} disabled={loading} style={styles.refreshBtn}>
-          <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd"/>
-          </svg>
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={() => { setClearResyncBucket(''); setClearResyncStatus('idle'); setClearResyncMessage(''); setClearResyncModal(true); }}
+            style={{ ...styles.refreshBtn, color: '#dc2626', borderColor: 'rgba(220,38,38,0.35)' }}
+            title="Emergency recovery: wipes NFT Records and rebuilds it from a bucket's real files"
+          >
+            ⚠ Clear &amp; Resync from Filebase
+          </button>
+          <button onClick={fetchStatus} disabled={loading} style={styles.refreshBtn}>
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd"/>
+            </svg>
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* ── Summary cards ──────────────────────────────────────────────────── */}
@@ -452,6 +523,70 @@ export default function SyncStatusPage() {
             <button onClick={() => setRecordsModal(null)} style={styles.cancelBtn}>Cancel</button>
             <button onClick={startRecordsSync} style={styles.confirmBtn('#8b5cf6')}>
               Confirm Sync
+            </button>
+          </div>
+        </Overlay>
+      )}
+
+      {/* ── Force Sync Conflict Modal ──────────────────────────────────────── */}
+      {forceConflict && (
+        <Overlay onClose={() => setForceConflict(null)}>
+          <ModalTitle>NFT Records Already Holds Different Data</ModalTitle>
+          <p style={styles.modalSub}>{forceConflict.message}</p>
+          <div style={styles.warningBox}>
+            Forcing this sync leaves <strong>{forceConflict.name}</strong>&apos;s rows mixed in with whatever
+            collection is already in <code style={{ background: 'var(--hover)', padding: '1px 5px', borderRadius: 4 }}>nft_records</code>.
+            To fully replace it with just this collection, cancel here and use{' '}
+            <strong>Clear &amp; Resync from Filebase</strong> instead.
+          </div>
+          <div style={styles.modalFooter}>
+            <button onClick={() => setForceConflict(null)} style={styles.cancelBtn}>Cancel</button>
+            <button onClick={forceRecordsSync} style={styles.confirmBtn('#dc2626')}>
+              Force Sync Anyway
+            </button>
+          </div>
+        </Overlay>
+      )}
+
+      {/* ── Clear & Resync From Filebase Modal ─────────────────────────────── */}
+      {clearResyncModal && (
+        <Overlay onClose={() => { if (clearResyncStatus !== 'running') setClearResyncModal(false); }}>
+          <ModalTitle>Clear &amp; Resync NFT Records from Filebase</ModalTitle>
+          <p style={styles.modalSub}>
+            Deletes <strong>every row</strong> in <code style={{ background: 'var(--hover)', padding: '1px 5px', borderRadius: 4 }}>nft_records</code>,
+            then rebuilds it entirely from the real files in whichever bucket you pick below — for recovering from
+            corrupted/lost records, or switching which collection nft_records holds.
+          </p>
+          <div style={styles.warningBox}>
+            This is destructive and cannot be undone. Pick the bucket carefully — the wrong bucket wipes real data
+            and replaces it with the wrong collection.
+          </div>
+          <label style={{ ...styles.label, marginTop: 12 }}>Filebase Bucket</label>
+          <select
+            value={clearResyncBucket}
+            onChange={e => setClearResyncBucket(e.target.value)}
+            disabled={clearResyncStatus === 'running'}
+            style={styles.select}
+          >
+            <option value="">— select bucket —</option>
+            {bucketList.length === 0 && <option value="" disabled>— no buckets found —</option>}
+            {bucketList.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+          {clearResyncMessage && (
+            <div style={{ marginTop: 12, fontSize: 13, color: clearResyncStatus === 'error' ? '#dc2626' : 'var(--text-muted)' }}>
+              {clearResyncMessage}
+            </div>
+          )}
+          <div style={styles.modalFooter}>
+            <button onClick={() => setClearResyncModal(false)} disabled={clearResyncStatus === 'running'} style={styles.cancelBtn}>
+              {clearResyncStatus === 'done' ? 'Close' : 'Cancel'}
+            </button>
+            <button
+              onClick={startClearResync}
+              disabled={!clearResyncBucket.trim() || clearResyncStatus === 'running'}
+              style={styles.confirmBtn('#dc2626')}
+            >
+              {clearResyncStatus === 'running' ? 'Working…' : 'Delete & Resync'}
             </button>
           </div>
         </Overlay>
