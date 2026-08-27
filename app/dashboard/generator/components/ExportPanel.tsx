@@ -1644,14 +1644,23 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         </div>
       )}
 
-      {/* ── Server-Side Export ── */}
-      {dbSaved && dbJobIdRef.current && (
+      {/* ── Server-Side Export (single-threaded) — hidden, not removed. Its
+          own subtitle used to say "Recommended for large collections",
+          which was actively wrong: it's the slow path, and nothing steered
+          an artist toward Parallel Export (the fast one) instead. Rather
+          than leave two buttons where picking the "recommended"-sounding
+          one gets you the slow result, this stays hidden until it's merged
+          into a single always-fast flow. Code kept intact — it's still the
+          only path that builds a pre-built ZIP and bundles NFT Records sync
+          in one click, both useful to keep for reference/fallback. ── */}
+      {false && dbSaved && dbJobIdRef.current && (
         <div className="exp-fb-card exp-svr-card" data-testid="server-export-section">
           <div className="exp-fb-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div>
               <div className="exp-fb-title">Server-Side Export</div>
               <div className="exp-fb-sub">
-                Recommended for large collections — compositing and IPFS upload run on the server (no browser limits)
+                Compositing and IPFS upload run on the server (no browser limits). Runs as a single stream — for
+                large collections, use <strong>Parallel Export</strong> below instead for real wall-clock speedup.
               </div>
             </div>
             <Link
