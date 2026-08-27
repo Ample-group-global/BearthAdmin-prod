@@ -8,87 +8,83 @@ import { fetchWithTimeout } from '../../../../lib/fetchWithTimeout';
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function ExportPanel({ weights, layers: layersProp = [], collection, conflicts, collectionId = null }) {
-  const supply      = Number(collection?.supply ?? 0);
-  const targetW     = collection?.width       ?? null;
-  const targetH     = collection?.height      ?? null;
-  const wantWebp    = collection?.format        === 'webp';
-  const imgExt      = wantWebp ? 'webp' : 'png';
-  const imgMime     = wantWebp ? 'image/webp' : 'image/png';
-  const nameFormat  = collection?.nameFormat  ?? '';
+  const supply = Number(collection?.supply ?? 0);
+  const targetW = collection?.width ?? null;
+  const targetH = collection?.height ?? null;
+  const wantWebp = collection?.format === 'webp';
+  const imgExt = wantWebp ? 'webp' : 'png';
+  const imgMime = wantWebp ? 'image/webp' : 'image/png';
+  const nameFormat = collection?.nameFormat ?? '';
   const description = collection?.description ?? '';
-  const collName    = collection?.name        ?? '';
+  const collName = collection?.name ?? '';
   const THUMB = Math.min(280, targetW);
   const scale = Math.min(THUMB / targetW, THUMB / targetH, 1);
-  const tW    = Math.max(1, Math.round(targetW * scale));
-  const tH    = Math.max(1, Math.round(targetH * scale));
+  const tW = Math.max(1, Math.round(targetW * scale));
+  const tH = Math.max(1, Math.round(targetH * scale));
 
-  const [phase,     setPhase]     = useState<'idle'|'done'>('idle');
-  const [sortBy,    setSortBy]    = useState<'rarity'|'id'>('rarity');
-  const [popup,     setPopup]     = useState(null);
-  const [error,     setError]     = useState('');
-  const [dbError,   setDbError]   = useState('');
-  const [dbSaving,  setDbSaving]  = useState(false);
-  const [dbSaved,   setDbSaved]   = useState(false);
+  const [phase, setPhase] = useState<'idle' | 'done'>('idle');
+  const [sortBy, setSortBy] = useState<'rarity' | 'id'>('rarity');
+  const [popup, setPopup] = useState(null);
+  const [error, setError] = useState('');
+  const [dbError, setDbError] = useState('');
+  const [dbSaving, setDbSaving] = useState(false);
+  const [dbSaved, setDbSaved] = useState(false);
 
   // ── Server-side export state ──────────────────────────────────────────────
-  const [svrBucket,      setSvrBucket]      = useState('');
-  const [svrNewBucket,   setSvrNewBucket]   = useState('');
+  const [svrBucket, setSvrBucket] = useState('');
+  const [svrNewBucket, setSvrNewBucket] = useState('');
   const [svrSyncRecords, setSvrSyncRecords] = useState(false);
-  const [svrResumeFrom,  setSvrResumeFrom]  = useState(0);
-  const [bucketList,     setBucketList]     = useState<string[]>([]);
+  const [svrResumeFrom, setSvrResumeFrom] = useState(0);
+  const [resumeDetecting, setResumeDetecting] = useState(false);
+  const [resumeDetected, setResumeDetected] = useState<number | null>(null);
+  const [bucketList, setBucketList] = useState<string[]>([]);
   const [bucketsLoading, setBucketsLoading] = useState(false);
-  const [bucketsError,   setBucketsError]   = useState('');
-  const [svrStatus,   setSvrStatus]   = useState<'idle'|'running'|'done'|'error'>('idle');
+  const [bucketsError, setBucketsError] = useState('');
+  const [svrStatus, setSvrStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [svrProgress, setSvrProgress] = useState(0);
-  const [svrTotal,    setSvrTotal]    = useState(0);
-  const [svrPhase,    setSvrPhase]    = useState('');
-  const [svrError,    setSvrError]    = useState('');
+  const [svrTotal, setSvrTotal] = useState(0);
+  const [svrPhase, setSvrPhase] = useState('');
+  const [svrError, setSvrError] = useState('');
   const svrExportIdRef = useRef<string | null>(null);
-  const svrPollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const svrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const svrStartTimeRef = useRef<number | null>(null);
+  const svrTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [svrElapsedSec, setSvrElapsedSec] = useState(0);
 
   // ── Refresh CIDs state ────────────────────────────────────────────────────
-  const [cidStatus,   setCidStatus]   = useState<'idle'|'running'|'done'|'error'>('idle');
+  const [cidStatus, setCidStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [cidProgress, setCidProgress] = useState(0);
-  const [cidTotal,    setCidTotal]    = useState(0);
+  const [cidTotal, setCidTotal] = useState(0);
   const [cidResolved, setCidResolved] = useState(0);
-  const [cidSkipped,  setCidSkipped]  = useState(0);
-  const [cidPhase,    setCidPhase]    = useState('');
-  const [cidError,    setCidError]    = useState('');
+  const [cidSkipped, setCidSkipped] = useState(0);
+  const [cidPhase, setCidPhase] = useState('');
+  const [cidError, setCidError] = useState('');
   const cidPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Server-side generation state ──────────────────────────────────────────
-  const [svrGenStatus,   setSvrGenStatus]   = useState<'idle'|'running'|'done'|'error'>('idle');
+  const [svrGenStatus, setSvrGenStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [svrGenProgress, setSvrGenProgress] = useState(0);
-  const [svrGenTotal,    setSvrGenTotal]    = useState(0);
-  const [svrGenPhase,    setSvrGenPhase]    = useState('');
-  const [svrGenError,    setSvrGenError]    = useState('');
+  const [svrGenTotal, setSvrGenTotal] = useState(0);
+  const [svrGenPhase, setSvrGenPhase] = useState('');
+  const [svrGenError, setSvrGenError] = useState('');
   const svrGenPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [layerStatus,  setLayerStatus]  = useState<'loading'|'ok'|'empty'|'unknown'>('loading');
+  const [layerStatus, setLayerStatus] = useState<'loading' | 'ok' | 'empty' | 'unknown'>('loading');
 
-  const [rarityItems,  setRarityItems]  = useState<any[]>([]);
-  const [bitmapsVer,   setBitmapsVer]   = useState(0);
-  const [filter,       setFilter]       = useState<{ folder: string; stem: string; layerLabel: string; assetName: string } | null>(null);
-  const [tierFilter,   setTierFilter]   = useState<string | null>(null);
-  const [gridPage,     setGridPage]     = useState(0);
+  const [rarityItems, setRarityItems] = useState<any[]>([]);
+  const [bitmapsVer, setBitmapsVer] = useState(0);
+  const [filter, setFilter] = useState<{ folder: string; stem: string; layerLabel: string; assetName: string } | null>(null);
+  const [tierFilter, setTierFilter] = useState<string | null>(null);
+  const [gridPage, setGridPage] = useState(0);
   const jobBitmaps = useRef<Record<string, ImageBitmap>>({});
   const [layers, setLayers] = useState<any[]>(layersProp);
   const lastFailedJobIdRef = useRef<string | null>(null);
-  const dbJobIdRef         = useRef<string | null>(null);
-  // Set the instant a real generation starts (before the DB even has a job row for
-  // it yet) so the auto-restore-on-mount effect below can bail for the whole
-  // generation window, not just after dbJobIdRef is finally populated.
+  const dbJobIdRef = useRef<string | null>(null);
   const generationStartedRef = useRef(false);
   // editionNumber → itemId UUID (populated during persistToDb, used for IPFS CID writeback)
-  const editionItemMapRef  = useRef<Record<number, string>>({});
-
-  // ── Check whether this collection has active layers in DB ────────────────
-  // Re-runs whenever layersProp/layers actually gain data (not just on mount) —
-  // otherwise a collectionId that's set before the parent's own layer fetch
-  // resolves gets stuck on the self-fetch's stale first verdict.
+  const editionItemMapRef = useRef<Record<number, string>>({});
   useEffect(() => {
     if (!collectionId) { setLayerStatus('unknown'); return; }
-    // If layers are already known from props/state, no extra fetch needed
     if ((layersProp as any[]).length > 0 || layers.length > 0) {
       setLayerStatus('ok');
       return;
@@ -117,20 +113,9 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         if (cancelled) return;
         const names: string[] = (data.buckets ?? []).map((b: any) => b.name).filter(Boolean);
         setBucketList(names);
-        // Never auto-select a bucket — this tool is reused across collections
-        // with different target buckets, so no name belongs hardcoded here.
-        // An export previously ran against whichever bucket sorted first
-        // alphabetically and wiped a bucket that should never be touched.
-        // The fix is structural, not a smarter guess: leave svrBucket empty
-        // so the admin must explicitly pick one every time — Start Export
-        // stays disabled (see `disabled={!svrBucket.trim()}` below) until they do.
       })
       .catch((e: any) => {
         if (cancelled) return;
-        // A failed/timed-out fetch used to leave bucketList silently empty,
-        // rendering the exact same "no buckets found" the dropdown shows when
-        // the account genuinely has zero buckets — an admin has no way to
-        // tell "nothing to select" apart from "this failed, try again."
         setBucketsError(e?.message ?? 'Failed to load buckets — check your connection and retry.');
       })
       .finally(() => { if (!cancelled) setBucketsLoading(false); });
@@ -138,18 +123,39 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   }
   useEffect(() => loadBuckets(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Auto-detect real resume point from the selected bucket ────────────────
+  // "Resume from edition" used to default to 0 with no way to know the real
+  // number without manually checking Filebase — if an artist's tab closed
+  // mid-export (computer slept, connection dropped, she just navigated away)
+  // and she came back and clicked Start Export again without knowing that
+  // number, it would silently restart from scratch instead of continuing.
+  // Detect how many images are already in the selected bucket and pre-fill
+  // it automatically, so clicking Start Export always just picks up correctly.
+  useEffect(() => {
+    const bucket = svrBucket === '__new__' ? '' : svrBucket.trim();
+    if (!bucket || svrStatus !== 'idle') { setResumeDetected(null); return; }
+    let cancelled = false;
+    setResumeDetecting(true);
+    fetch(`/api/filebase/objects?bucket=${encodeURIComponent(bucket)}`)
+      .then(r => r.ok ? r.json() : { objects: [] })
+      .then(data => {
+        if (cancelled) return;
+        const imageCount = (data.objects ?? []).filter((o: any) =>
+          String(o.key ?? o.Key ?? '').startsWith('images/')
+        ).length;
+        setResumeDetected(imageCount);
+        if (imageCount > 0) setSvrResumeFrom(imageCount);
+      })
+      .catch(() => { if (!cancelled) setResumeDetected(null); })
+      .finally(() => { if (!cancelled) setResumeDetecting(false); });
+    return () => { cancelled = true; };
+  }, [svrBucket, svrStatus]);
+
   // ── Auto-restore done state from DB on mount ─────────────────────────────
   useEffect(() => {
     if (!collectionId || phase !== 'idle') return;
     let cancelled = false;
     (async () => {
-      // Retry up to 3× with 5s backoff — BearthApi pool may be briefly stressed
-      // after a heavy generation run, causing the first restore attempt to fail.
-      // The backoff means this can still be in flight when the user starts a
-      // real generation from this same mount; if it resolves after that, it
-      // must not clobber the job the user actually just generated — confirmed
-      // live 2026-08-17: this restore landed after a fresh generate and
-      // silently swapped the UI back to an older, unrelated completed job.
       for (let attempt = 0; attempt < 3; attempt++) {
         if (cancelled || generationStartedRef.current) return;
         if (attempt > 0) await new Promise(r => setTimeout(r, 5_000));
@@ -172,7 +178,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       }
     })();
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collectionId]);
 
   // ── Check for pre-built ZIP after server export completes ────────────────
@@ -183,40 +189,82 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
     fetch(`/api/nft-gen/export/presigned-zip/${dbJobIdRef.current}${qs}`)
       .then(r => r.ok ? r.json() : { ready: false })
       .then(d => { if (d.ready) setZipReady(true); })
-      .catch(() => {});
+      .catch(() => { });
   }, [svrStatus]);
 
   // ── Server export helpers ─────────────────────────────────────────────────
+  const MAX_AUTO_RESUMES = 100; // tighter 30s stall detection means more (much shorter) cycles per run
+  const svrLastProgressRef = useRef(0);
+  const svrLastProgressTimeRef = useRef(0);
 
   async function startServerExport() {
     const bucket = svrBucket === '__new__' ? svrNewBucket.trim() : svrBucket.trim();
     if (!bucket || !dbJobIdRef.current) return;
     setSvrStatus('running');
-    setSvrProgress(svrResumeFrom || 0);
-    setSvrPhase(svrResumeFrom > 0 ? `Resuming from ${svrResumeFrom.toLocaleString()}…` : 'Starting…');
     setSvrError('');
+
+    // Elapsed-time clock covers the whole effort (from this first click),
+    // not just since the last reconnect — a stall-and-resume shouldn't reset
+    // the artist's sense of "how long has this actually been running."
+    svrStartTimeRef.current = Date.now();
+    setSvrElapsedSec(0);
+    if (svrTickRef.current) clearInterval(svrTickRef.current);
+    svrTickRef.current = setInterval(() => {
+      if (svrStartTimeRef.current) {
+        setSvrElapsedSec(Math.floor((Date.now() - svrStartTimeRef.current) / 1000));
+      }
+    }, 1000);
+    await runExportAttempt(svrResumeFrom || 0, bucket, 0);
+  }
+
+  async function runExportAttempt(resumeFrom: number, bucket: string, resumeCount: number) {
+    setSvrProgress(resumeFrom);
+    setSvrPhase(resumeFrom > 0 ? `Resuming from ${resumeFrom.toLocaleString()}…` : 'Starting…');
+    svrLastProgressRef.current = resumeFrom;
+    svrLastProgressTimeRef.current = Date.now();
 
     try {
       const r = await fetch('/api/nft-gen/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          jobId:          dbJobIdRef.current,
+          jobId: dbJobIdRef.current,
           bucket,
-          format:         imgExt,
-          width:          targetW,
-          height:         targetH,
+          format: imgExt,
+          width: targetW,
+          height: targetH,
           collectionName: collName,
           description,
           nameFormat,
-          syncToRecords:  svrSyncRecords,
-          resumeFrom:     svrResumeFrom || 0,
+          syncToRecords: svrSyncRecords,
+          resumeFrom,
         }),
       });
       const d = await r.json();
-      if (!r.ok) { setSvrStatus('error'); setSvrError(d.error ?? 'Server error'); return; }
-      svrExportIdRef.current = d.exportId;
-      setSvrTotal(d.total ?? supply);
+      if (!r.ok) {
+        // "Already running" isn't a dead end — the server hands back that
+        // job's own id and live progress specifically so we can attach to
+        // it instead of just telling the artist to wait with no visibility
+        // into how far along it is or how much longer it'll take. Falls
+        // through to the same polling loop below instead of returning.
+        if (r.status === 409 && d.exportId) {
+          console.log(`[export] attaching to already-running export ${d.exportId} at ${d.progress ?? 0}/${d.total ?? supply}`);
+          svrExportIdRef.current = d.exportId;
+          setSvrStatus('running');
+          setSvrTotal(d.total ?? supply);
+          setSvrProgress(d.progress ?? 0);
+          setSvrPhase(d.phase ?? 'Attached to an in-progress export…');
+          svrLastProgressRef.current = d.progress ?? 0;
+          svrLastProgressTimeRef.current = Date.now();
+        } else {
+          setSvrStatus('error');
+          setSvrError(d.error ?? 'Server error');
+          return;
+        }
+      } else {
+        svrExportIdRef.current = d.exportId;
+        setSvrTotal(d.total ?? supply);
+      }
 
       let exportPollFailures = 0;
       svrPollRef.current = setInterval(async () => {
@@ -232,16 +280,46 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           setSvrError(pr?.error ?? 'Server restarted during export. Please try again.');
           return;
         }
-        setSvrProgress(pr.progress ?? 0);
+        const newProgress = pr.progress ?? 0;
+        setSvrProgress(newProgress);
         setSvrPhase(pr.phase ?? '');
         setSvrTotal(pr.total ?? supply);
+        if (newProgress !== svrLastProgressRef.current) {
+          svrLastProgressRef.current = newProgress;
+          svrLastProgressTimeRef.current = Date.now();
+        }
         if (pr.status === 'done') {
           setSvrStatus('done');
           if (svrPollRef.current) { clearInterval(svrPollRef.current); svrPollRef.current = null; }
+          if (svrTickRef.current) { clearInterval(svrTickRef.current); svrTickRef.current = null; }
+          return;
         } else if (pr.status === 'error') {
           setSvrStatus('error');
           setSvrError(pr.error ?? 'Export failed');
           if (svrPollRef.current) { clearInterval(svrPollRef.current); svrPollRef.current = null; }
+          if (svrTickRef.current) { clearInterval(svrTickRef.current); svrTickRef.current = null; }
+          return;
+        }
+
+        // A normal active burst reports new progress every ~10-14s (real
+        // measured data from today's runs) — 100s of silence was far more
+        // conservative than the evidence justifies and left every stall
+        // visible to the artist for a minute and a half before recovering.
+        // 30s is still ~2-3x the normal cadence (comfortable margin against
+        // a single slow image), but cuts the visible freeze time by more
+        // than half. Safe to tighten because a premature reconnect attempt
+        // against a genuinely-still-alive invocation just gets attached to
+        // (see the 409 handling above) instead of causing any real harm.
+        const stalledForMs = Date.now() - svrLastProgressTimeRef.current;
+        if (stalledForMs > 30_000) {
+          if (svrPollRef.current) { clearInterval(svrPollRef.current); svrPollRef.current = null; }
+          if (resumeCount >= MAX_AUTO_RESUMES) {
+            setSvrStatus('error');
+            setSvrError(`Export stalled at ${newProgress.toLocaleString()} / ${supply.toLocaleString()} after ${MAX_AUTO_RESUMES} automatic resume attempts. Use "Resume from edition" below to continue manually.`);
+            return;
+          }
+          setSvrPhase(`No progress for ${Math.round(stalledForMs / 1000)}s — auto-resuming from ${newProgress.toLocaleString()} (attempt ${resumeCount + 1}/${MAX_AUTO_RESUMES})…`);
+          runExportAttempt(newProgress, bucket, resumeCount + 1);
         }
       }, 2000);
     } catch (e: any) {
@@ -252,7 +330,18 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
 
   function cancelServerExport() {
     if (svrPollRef.current) { clearInterval(svrPollRef.current); svrPollRef.current = null; }
+    if (svrTickRef.current) { clearInterval(svrTickRef.current); svrTickRef.current = null; }
     setSvrStatus('idle');
+  }
+
+  function formatDuration(totalSec: number): string {
+    if (!Number.isFinite(totalSec) || totalSec < 0) return '—';
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = Math.floor(totalSec % 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   }
 
   async function startRefreshCids() {
@@ -270,7 +359,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       const r = await fetch('/api/nft-gen/export/refresh-cids', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bucket, format: imgExt }),
+        body: JSON.stringify({ bucket, format: imgExt, jobId: dbJobIdRef.current, syncToRecords: svrSyncRecords }),
       });
       let d: any = null;
       try { d = await r.json(); } catch { /* empty or non-JSON body */ }
@@ -434,7 +523,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
             // The collection backing this job was deleted from elsewhere while
             // generation was in flight — clear the stale cookie so a reload
             // lands on a fresh Settings tab instead of the same dead end.
-            fetch('/api/session/collection', { method: 'DELETE' }).catch(() => {});
+            fetch('/api/session/collection', { method: 'DELETE' }).catch(() => { });
           }
         }
       }, 2000);
@@ -449,8 +538,8 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       let layerData: any[] = layersProp.length ? layersProp : layers;
       if (!layerData.length) {
         if (collectionId) {
-        try { const r = await fetch(`/api/layers?collectionId=${collectionId}`); layerData = await r.json(); } catch {}
-      }
+          try { const r = await fetch(`/api/layers?collectionId=${collectionId}`); layerData = await r.json(); } catch { }
+        }
       }
       if (!layerData.length) return;
       setLayers(layerData);
@@ -507,9 +596,9 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         }
         return {
           index: item.editionNumber,
-          rank:  item.rarityRank,
+          rank: item.rarityRank,
           score: item.rarityScore,
-          tier:  item.rarityTier,
+          tier: item.rarityTier,
           attrs: traits.map((t: any) => ({ trait_type: t.traitType, value: t.traitValue })),
           combo,
           total: supply,
@@ -539,11 +628,11 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
                 const blob = await res.blob();
                 jobBitmaps.current[rel] = await createImageBitmap(blob);
               }
-            } catch {}
+            } catch { }
           }));
           setBitmapsVer(v => v + 1);
         }
-      })().catch(() => {});
+      })().catch(() => { });
     } catch (e) {
       console.error('[loadAndDisplayFromDb]', e);
     }
@@ -555,7 +644,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
     setDbSaved(false);
     setDbError('');
     if (lastFailedJobIdRef.current) {
-      await fetch(`/api/nft-gen/jobs/${lastFailedJobIdRef.current}`, { method: 'DELETE' }).catch(() => {});
+      await fetch(`/api/nft-gen/jobs/${lastFailedJobIdRef.current}`, { method: 'DELETE' }).catch(() => { });
       lastFailedJobIdRef.current = null;
     }
 
@@ -605,10 +694,10 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       // ── 3. Insert items in batches — 5 concurrent requests ─────────────────
       // 500 items per batch × 5 parallel = processes 9999 in ~4 parallel groups.
       // ON CONFLICT DO NOTHING makes every batch retry fully idempotent.
-      const ITEM_BATCH      = 500;
-      const BATCH_CONCUR    = 5;
-      const totalBatches    = Math.ceil(items.length / ITEM_BATCH);
-      let   completedBatches = 0;
+      const ITEM_BATCH = 500;
+      const BATCH_CONCUR = 5;
+      const totalBatches = Math.ceil(items.length / ITEM_BATCH);
+      let completedBatches = 0;
 
       const allChunks = Array.from({ length: totalBatches }, (_, bi) => {
         const start = bi * ITEM_BATCH;
@@ -618,10 +707,10 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
             editionNumber: item.index,
             dnaHash: (item.attrs as any[]).map((a: any) => `${a.trait_type}:${a.value}`).join('|'),
             score: item.score,
-            rank:  item.rank,
-            tier:  item.tier,
+            rank: item.rank,
+            tier: item.tier,
             traits: (item.attrs as any[]).map((a: any) => ({
-              traitType:  a.trait_type,
+              traitType: a.trait_type,
               traitValue: a.value,
             })),
           })),
@@ -633,13 +722,13 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         await Promise.all(group.map(async ({ batchNum, chunk }) => {
           const batchData = await withRetry(`batch-${batchNum}/${totalBatches}`, async () => {
             const res = await fetch(`/api/nft-gen/jobs/${dbJobId}/items/batch`, {
-              method:  'POST',
+              method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify({ items: chunk }),
+              body: JSON.stringify({ items: chunk }),
             });
             if (!res.ok) {
               const body = await res.json().catch(() => ({}));
-              const err  = new Error(`Batch ${batchNum}/${totalBatches} failed (${res.status}): ${(body as any).error ?? 'server error'}`);
+              const err = new Error(`Batch ${batchNum}/${totalBatches} failed (${res.status}): ${(body as any).error ?? 'server error'}`);
               if (res.status >= 400 && res.status < 500) (err as any).retryable = false;
               throw err;
             }
@@ -653,10 +742,10 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         completedBatches += group.length;
         const pctDone = Math.round((completedBatches / totalBatches) * 100);
         fetch(`/api/nft-gen/jobs/${dbJobId}/progress`, {
-          method:  'PATCH',
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ progress: pctDone }),
-        }).catch(() => {});
+          body: JSON.stringify({ progress: pctDone }),
+        }).catch(() => { });
       }
 
       // ── 4. Complete job ─────────────────────────────────────────────────────
@@ -668,10 +757,10 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
     } catch (err: any) {
       if (dbJobId) {
         fetch(`/api/nft-gen/jobs/${dbJobId}/fail`, {
-          method:  'POST',
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ errorMessage: err?.message ?? 'Item batch insert failed' }),
-        }).catch(() => {});
+          body: JSON.stringify({ errorMessage: err?.message ?? 'Item batch insert failed' }),
+        }).catch(() => { });
       }
       lastFailedJobIdRef.current = dbJobId;
       setDbError(err?.message ?? 'Unknown error saving to database');
@@ -694,7 +783,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   // Only render one page at a time — full sort/filter on all items, display is paginated
   const pageItems = useMemo(() =>
     visibleItems.slice(gridPage * PAGE_SIZE, (gridPage + 1) * PAGE_SIZE),
-  [visibleItems, gridPage]);
+    [visibleItems, gridPage]);
 
   const totalPages = Math.max(1, Math.ceil(visibleItems.length / PAGE_SIZE));
 
@@ -707,7 +796,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
 
   const layerBreakdown = useMemo(() =>
     layers.map(layer => ({ ...layer, count: layer.assets.length })),
-  [layers]);
+    [layers]);
 
   function handleTraitClick(layer: any, asset: any) {
     setFilter(prev =>
@@ -762,10 +851,10 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
             <div className="exp-section-label">Collection Summary</div>
             <div className="exp-summary-grid">
               {[
-                { label: 'Name',       value: collName        || '—' },
-                { label: 'Supply',     value: collection?.supply ? Number(collection.supply).toLocaleString() : '—' },
+                { label: 'Name', value: collName || '—' },
+                { label: 'Supply', value: collection?.supply ? Number(collection.supply).toLocaleString() : '—' },
                 { label: 'Blockchain', value: collection?.network || collection?.blockchain || '—' },
-                { label: 'Format',     value: collection?.format ? collection.format.toUpperCase() : '—' },
+                { label: 'Format', value: collection?.format ? collection.format.toUpperCase() : '—' },
                 { label: 'Resolution', value: (collection?.width && collection?.height) ? collection.width + '×' + collection.height : '—' },
               ].map(item => (
                 <div key={item.label} className="exp-summary-stat">
@@ -778,11 +867,11 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
 
           {layerStatus === 'empty' && (
             <div className="exp-error-banner" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {(!collection?.width || !collection?.height) && (
-            <div className="exp-error-banner">
-              Dimensions not configured — go to <strong>Settings</strong> and set Width and Height before generating.
-            </div>
-          )}
+              {(!collection?.width || !collection?.height) && (
+                <div className="exp-error-banner">
+                  Dimensions not configured — go to <strong>Settings</strong> and set Width and Height before generating.
+                </div>
+              )}
               <span>No active layers found for this collection.</span>
               {layersProp.length > 0 ? (
                 <button
@@ -1065,6 +1154,14 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
                 <label htmlFor="resumeFromInput" style={{ fontSize: 13, userSelect: 'none', color: 'var(--text-muted)' }}>
                   Resume from edition (0 = start fresh)
                 </label>
+                {resumeDetecting && (
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>Checking bucket for existing progress…</span>
+                )}
+                {!resumeDetecting && resumeDetected != null && resumeDetected > 0 && (
+                  <span style={{ fontSize: 12, color: 'var(--accent2)' }}>
+                    ✓ Detected {resumeDetected.toLocaleString()} image{resumeDetected === 1 ? '' : 's'} already in this bucket — pre-filled to continue from there.
+                  </span>
+                )}
               </div>
               {svrError && <div className="exp-error-banner" style={{ marginTop: 10 }}>{svrError}</div>}
             </>
@@ -1078,6 +1175,20 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
               </div>
               <ProgressBar value={svrProgress} max={svrTotal} />
               <div className="exp-step-count">{svrProgress.toLocaleString()} / {svrTotal.toLocaleString()}</div>
+              {(() => {
+                // Rate from progress-over-elapsed naturally self-corrects
+                // for stalls as part of the average, rather than assuming a
+                // best-case speed that never accounts for reconnect overhead.
+                const rate = svrElapsedSec > 0 ? svrProgress / svrElapsedSec : 0;
+                const remaining = svrTotal - svrProgress;
+                const etaSec = rate > 0 && remaining > 0 ? remaining / rate : null;
+                return (
+                  <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 14 }}>
+                    <span>Elapsed: {formatDuration(svrElapsedSec)}</span>
+                    <span>Est. remaining: {etaSec != null ? formatDuration(etaSec) : 'calculating…'}</span>
+                  </div>
+                );
+              })()}
               <button className="btn btn-ghost" onClick={cancelServerExport} style={{ marginTop: 8 }}>
                 Stop polling
               </button>
@@ -1096,12 +1207,24 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
             </div>
           )}
 
-          {svrStatus === 'error' && (
-            <div className="exp-banner exp-banner-error" style={{ marginTop: 14 }}>
-              <span>Server export failed: {svrError}</span>
-              <button className="exp-retry-btn" onClick={() => { setSvrStatus('idle'); setSvrError(''); }}>↺ Retry</button>
-            </div>
-          )}
+          {svrStatus === 'error' && (() => {
+            // "An export is already running" isn't a failure — it's someone
+            // else's export legitimately in progress on this collection.
+            // Labeling it "Server export failed" and showing it in red reads
+            // as something broke, when the honest message is just "wait your
+            // turn" — confusing for an artist who did nothing wrong.
+            const alreadyRunning = /already running/i.test(svrError);
+            return (
+              <div className={alreadyRunning ? 'exp-banner exp-banner-saved' : 'exp-banner exp-banner-error'} style={{ marginTop: 14 }}>
+                <span>{alreadyRunning
+                  ? 'An export is already running for this collection. Wait for it to finish, or refresh this page to see its progress.'
+                  : `Server export failed: ${svrError}`}</span>
+                <button className="exp-retry-btn" onClick={() => { setSvrStatus('idle'); setSvrError(''); }}>
+                  {alreadyRunning ? 'OK' : '↺ Retry'}
+                </button>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1119,56 +1242,56 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
               if Filebase was unusually slow during a large run.
             </div>
 
-          {cidStatus === 'idle' && (
-            <div style={{ marginTop: 10 }}>
-              <button
-                className="btn btn-ghost"
-                onClick={startRefreshCids}
-                disabled={!svrBucket.trim() && !svrNewBucket.trim()}
-                data-testid="refresh-cids-btn"
-              >
-                🔄 Fix Pending CIDs
-              </button>
-              {cidError && <div className="exp-error-banner" style={{ marginTop: 8 }}>{cidError}</div>}
-            </div>
-          )}
-
-          {cidStatus === 'running' && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <Spinner size={16} color="var(--accent)" />
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{cidPhase || 'Working…'}</span>
+            {cidStatus === 'idle' && (
+              <div style={{ marginTop: 10 }}>
+                <button
+                  className="btn btn-ghost"
+                  onClick={startRefreshCids}
+                  disabled={!svrBucket.trim() && !svrNewBucket.trim()}
+                  data-testid="refresh-cids-btn"
+                >
+                  🔄 Fix Pending CIDs
+                </button>
+                {cidError && <div className="exp-error-banner" style={{ marginTop: 8 }}>{cidError}</div>}
               </div>
-              {cidTotal > 0 && (
-                <>
-                  <ProgressBar value={cidProgress} max={cidTotal} />
-                  <div className="exp-step-count">{cidProgress.toLocaleString()} / {cidTotal.toLocaleString()}</div>
-                </>
-              )}
-            </div>
-          )}
+            )}
 
-          {cidStatus === 'done' && (
-            <div className="exp-banner exp-banner-saved" style={{ marginTop: 14 }}>
-              <CheckIcon size={15} />
-              <span>
-                {cidResolved.toLocaleString()} CIDs resolved
-                {cidSkipped > 0 ? ` · ${cidSkipped.toLocaleString()} skipped (run again in 30 s to pick up remaining)` : ''}
-              </span>
-              <button className="btn btn-ghost" style={{ marginLeft: 'auto' }}
-                onClick={() => { setCidStatus('idle'); setCidProgress(0); setCidTotal(0); }}
-              >
-                Run again
-              </button>
-            </div>
-          )}
+            {cidStatus === 'running' && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <Spinner size={16} color="var(--accent)" />
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{cidPhase || 'Working…'}</span>
+                </div>
+                {cidTotal > 0 && (
+                  <>
+                    <ProgressBar value={cidProgress} max={cidTotal} />
+                    <div className="exp-step-count">{cidProgress.toLocaleString()} / {cidTotal.toLocaleString()}</div>
+                  </>
+                )}
+              </div>
+            )}
 
-          {cidStatus === 'error' && (
-            <div className="exp-banner exp-banner-error" style={{ marginTop: 14 }}>
-              <span>CID refresh failed: {cidError}</span>
-              <button className="exp-retry-btn" onClick={() => { setCidStatus('idle'); setCidError(''); }}>↺ Retry</button>
-            </div>
-          )}
+            {cidStatus === 'done' && (
+              <div className="exp-banner exp-banner-saved" style={{ marginTop: 14 }}>
+                <CheckIcon size={15} />
+                <span>
+                  {cidResolved.toLocaleString()} CIDs resolved
+                  {cidSkipped > 0 ? ` · ${cidSkipped.toLocaleString()} skipped (run again in 30 s to pick up remaining)` : ''}
+                </span>
+                <button className="btn btn-ghost" style={{ marginLeft: 'auto' }}
+                  onClick={() => { setCidStatus('idle'); setCidProgress(0); setCidTotal(0); }}
+                >
+                  Run again
+                </button>
+              </div>
+            )}
+
+            {cidStatus === 'error' && (
+              <div className="exp-banner exp-banner-error" style={{ marginTop: 14 }}>
+                <span>CID refresh failed: {cidError}</span>
+                <button className="exp-retry-btn" onClick={() => { setCidStatus('idle'); setCidError(''); }}>↺ Retry</button>
+              </div>
+            )}
           </div>
         </details>
       )}
