@@ -402,13 +402,19 @@ export default function Page() {
   }
 
   function resetCollection() {
-    // Only clean up THIS session's own uploaded layer folder (its random
-    // session prefix, e.g. "umt9sfflbxu1zrk"), never the whole shared
-    // bucket — bearth-layers holds every artist's layers side by side, and
-    // a bucket-wide wipe here previously destroyed other artists'/other
-    // collections' files the instant anyone clicked "Start a new
-    // collection." No uploaded layers yet means nothing to clean up.
-    const sessionPrefix = layers[0]?.assets[0]?.rel?.split('/')[0];
+    // Only clean up an upload that was never actually saved — collectionId
+    // is set the moment a collection is either freshly saved OR resumed
+    // from a prior session, so its layer files are real, persisted data at
+    // that point and must never be touched here. Only a still-null
+    // collectionId means "uploaded but abandoned before Save & Continue,"
+    // which is the one case this cleanup exists for. And even then, only
+    // this session's own upload folder (its random prefix, e.g.
+    // "umt9sfflbxu1zrk") is ever touched — never the whole shared bucket,
+    // which holds every artist's layers side by side. A bucket-wide wipe
+    // here previously destroyed other artists'/other collections' files
+    // (including a fully-generated one) the instant anyone clicked "Start
+    // a new collection."
+    const sessionPrefix = !collectionId ? layers[0]?.assets[0]?.rel?.split('/')[0] : undefined;
     setCollection(DEFAULT_COLLECTION);
     setCollectionId(null);
     setSessionRestored(false);
