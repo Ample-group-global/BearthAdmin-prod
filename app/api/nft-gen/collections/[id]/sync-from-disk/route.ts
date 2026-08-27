@@ -22,6 +22,12 @@ async function apiPost(token: string, path: string, body: unknown) {
   return await r.json();
 }
 
+async function apiGet(token: string, path: string) {
+  const r = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) return null;
+  return await r.json().catch(() => null);
+}
+
 // Only matches when the filename itself genuinely spells out a tier — real
 // trait file stems essentially never do, so this returns null far more often
 // than not. That's correct: rarity_tier is nullable specifically to mean
@@ -135,7 +141,24 @@ export async function POST(
       }, { status: 422 });
     }
 
+    // Capture which upload-session prefix(es) this collection's traits point
+    // at BEFORE this sync repoints them at the freshly-uploaded one, so a
+    // re-upload (fixing/replacing layers on an already-saved collection)
+    // doesn't leave the old prefix's ~40MB+ orphaned forever in the shared
+    // bucket — every previous re-upload did exactly that with no cleanup.
+    const before = await apiGet(token, `/api/nft-gen/layers/collections/${collectionId}/prefixes`);
+    const oldPrefixes: string[] = before?.prefixes ?? [];
+
     const data = await syncLayerManifest(token, collectionId, body.layers);
+
+    const newPrefixes = new Set(
+      body.layers.flatMap(l => l.assets.map(a => a.rel?.split("/")[0]).filter(Boolean)),
+    );
+    const superseded = oldPrefixes.filter(p => !newPrefixes.has(p));
+    await Promise.all(superseded.map(prefix =>
+      apiPost(token, `/api/nft-gen/layers/cleanup-orphaned-prefix`, { prefix }).catch(() => {}),
+    ));
+
     return NextResponse.json(data);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
