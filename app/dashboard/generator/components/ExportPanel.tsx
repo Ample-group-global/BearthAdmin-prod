@@ -51,6 +51,15 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   const svrTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [svrElapsedSec, setSvrElapsedSec] = useState(0);
 
+  // ── Offline ZIP download progress ─────────────────────────────────────────
+  const [dlStatus, setDlStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [dlBytes, setDlBytes] = useState(0);
+  const [dlTotalBytes, setDlTotalBytes] = useState<number | null>(null);
+  const [dlElapsedSec, setDlElapsedSec] = useState(0);
+  const [dlError, setDlError] = useState('');
+  const dlStartRef = useRef<number | null>(null);
+  const dlTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // ── Refresh CIDs state ────────────────────────────────────────────────────
   const [cidStatus, setCidStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [cidProgress, setCidProgress] = useState(0);
@@ -408,12 +417,14 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
 
   async function downloadOfflineZip() {
     if (!dbJobIdRef.current) return;
+    const bucket = svrBucket === '__new__' ? svrNewBucket.trim() : svrBucket.trim();
 
     // Fast path: check if a pre-built ZIP exists in Filebase from the last
-    // server-side export. If so, use the pre-signed URL (direct S3 speed,
-    // no re-rendering, no server-streaming bottleneck).
+    // server-side export. If so, use the pre-signed URL directly (a plain
+    // navigation, not fetch() — it's a direct cross-origin S3 URL, and
+    // fetching it from the page would need Filebase's bucket CORS to allow
+    // this origin, which a same-tab navigation never required).
     try {
-      const bucket = svrBucket === '__new__' ? svrNewBucket.trim() : svrBucket.trim();
       const qs = bucket ? `?bucket=${encodeURIComponent(bucket)}` : '';
       const r = await fetch(`/api/nft-gen/export/presigned-zip/${dbJobIdRef.current}${qs}`);
       if (r.ok) {
@@ -425,16 +436,77 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       }
     } catch { /* fall through to streaming */ }
 
-    // Streaming fallback: re-renders on the fly (slower, no Filebase needed).
-    const params = new URLSearchParams({
-      format: imgExt,
-      width: String(targetW),
-      height: String(targetH),
-      collectionName: collName,
-      description,
-      nameFormat,
-    });
-    window.location.href = `/api/nft-gen/export/download-zip/${dbJobIdRef.current}?${params.toString()}`;
+    // Streaming fallback: re-renders on the fly, same-origin through our own
+    // API — read via fetch()+reader instead of a raw navigation so real
+    // progress (bytes received, elapsed time) can be shown in the UI.
+    setDlStatus('running');
+    setDlBytes(0);
+    setDlTotalBytes(null);
+    setDlError('');
+    dlStartRef.current = Date.now();
+    setDlElapsedSec(0);
+    if (dlTickRef.current) clearInterval(dlTickRef.current);
+    dlTickRef.current = setInterval(() => {
+      if (dlStartRef.current) setDlElapsedSec(Math.floor((Date.now() - dlStartRef.current) / 1000));
+    }, 1000);
+
+    try {
+      const params = new URLSearchParams({
+        format: imgExt,
+        width: String(targetW),
+        height: String(targetH),
+        collectionName: collName,
+        description,
+        nameFormat,
+        ...(bucket ? { bucket } : {}),
+      });
+      const resp = await fetch(`/api/nft-gen/export/download-zip/${dbJobIdRef.current}?${params.toString()}`);
+      if (!resp.ok || !resp.body) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error ?? `Download failed (${resp.status})`);
+      }
+      const lenHeader = resp.headers.get('content-length');
+      if (lenHeader) setDlTotalBytes(Number(lenHeader));
+
+      const reader = resp.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let received = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          received += value.length;
+          setDlBytes(received);
+        }
+      }
+
+      const blob = new Blob(chunks as BlobPart[], { type: 'application/zip' });
+      const objUrl = URL.createObjectURL(blob);
+      const safeName = (collName || 'bearth-nft-collection').replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = `${safeName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+
+      setDlStatus('done');
+    } catch (e: any) {
+      setDlStatus('error');
+      setDlError(e.message ?? 'Download failed');
+    } finally {
+      if (dlTickRef.current) { clearInterval(dlTickRef.current); dlTickRef.current = null; }
+    }
+  }
+
+  function formatBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   }
 
   const [zipReady, setZipReady] = useState(false);
@@ -1054,12 +1126,45 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
             <button
               className="btn btn-primary"
               onClick={downloadOfflineZip}
+              disabled={dlStatus === 'running'}
               data-testid="download-offline-zip-btn"
             >
               {zipReady ? '⚡ ' : '⬇ '}
-              Download {supply.toLocaleString()} NFTs + Metadata (.zip)
+              {dlStatus === 'running'
+                ? 'Downloading…'
+                : `Download ${supply.toLocaleString()} NFTs + Metadata (.zip)`}
             </button>
           </div>
+
+          {dlStatus === 'running' && (
+            <div style={{ marginTop: 12 }}>
+              {dlTotalBytes ? (
+                <>
+                  <ProgressBar value={dlBytes} max={dlTotalBytes} />
+                  <div className="exp-step-count">{formatBytes(dlBytes)} / {formatBytes(dlTotalBytes)}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{formatBytes(dlBytes)} received…</div>
+              )}
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                Elapsed: {formatDuration(dlElapsedSec)}
+              </div>
+            </div>
+          )}
+
+          {dlStatus === 'done' && (
+            <div className="exp-banner exp-banner-saved" style={{ marginTop: 12 }}>
+              <CheckIcon size={15} />
+              <span>Downloaded {formatBytes(dlBytes)} in {formatDuration(dlElapsedSec)}.</span>
+            </div>
+          )}
+
+          {dlStatus === 'error' && (
+            <div className="exp-banner exp-banner-error" style={{ marginTop: 12 }}>
+              <span>Download failed: {dlError}</span>
+              <button className="exp-retry-btn" onClick={downloadOfflineZip}>↺ Retry</button>
+            </div>
+          )}
         </div>
       )}
 
