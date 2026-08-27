@@ -363,6 +363,160 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
     setSvrStatus('idle');
   }
 
+  // ── Parallel (range-fan-out) export ───────────────────────────────────────
+  // A single export invocation's throughput is capped by that instance's own
+  // CPU allocation, regardless of concurrency settings within it — this
+  // fans the collection out across several concurrent invocations instead,
+  // each on its own instance, to get real wall-clock speedup for large
+  // collections. Separate from the Server-Side Export above, which stays
+  // exactly as-is for smaller/normal runs.
+  const PARALLEL_SLICE_COUNT = 8;
+  const [parStatus, setParStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [parSlices, setParSlices] = useState<Array<{ rangeStart: number; rangeEnd: number; progress: number; status: 'idle' | 'running' | 'done' | 'error' }>>([]);
+  const [parError, setParError] = useState('');
+  const [parElapsedSec, setParElapsedSec] = useState(0);
+  const parStartTimeRef = useRef<number | null>(null);
+  const parTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const parPollRefs = useRef<Record<number, ReturnType<typeof setInterval> | null>>({});
+  const parLastProgressRef = useRef<Record<number, number>>({});
+  const parLastProgressTimeRef = useRef<Record<number, number>>({});
+  const parResumeCountRef = useRef<Record<number, number>>({});
+  const PAR_MAX_AUTO_RESUMES = 100;
+
+  function computeSliceRanges(total: number, count: number): Array<{ rangeStart: number; rangeEnd: number }> {
+    const size = Math.ceil(total / count);
+    const ranges: Array<{ rangeStart: number; rangeEnd: number }> = [];
+    for (let start = 0; start < total; start += size) {
+      ranges.push({ rangeStart: start, rangeEnd: Math.min(start + size, total) });
+    }
+    return ranges;
+  }
+
+  async function startParallelExport() {
+    const bucket = svrBucket === '__new__' ? svrNewBucket.trim() : svrBucket.trim();
+    if (!bucket || !dbJobIdRef.current) return;
+
+    setParStatus('running');
+    setParError('');
+    parStartTimeRef.current = Date.now();
+    setParElapsedSec(0);
+    if (parTickRef.current) clearInterval(parTickRef.current);
+    parTickRef.current = setInterval(() => {
+      if (parStartTimeRef.current) setParElapsedSec(Math.floor((Date.now() - parStartTimeRef.current) / 1000));
+    }, 1000);
+
+    const ranges = computeSliceRanges(supply, PARALLEL_SLICE_COUNT);
+
+    // Detect real per-slice resume points from one bucket listing, instead
+    // of N separate calls — same reasoning as the single-shot export's
+    // auto-detect, just partitioned across ranges.
+    let doneImageCount = 0;
+    try {
+      const r = await fetch(`/api/filebase/objects?bucket=${encodeURIComponent(bucket)}`);
+      if (r.ok) {
+        const data = await r.json();
+        doneImageCount = (data.objects ?? []).filter((o: any) => String(o.key ?? o.Key ?? '').startsWith('images/')).length;
+      }
+    } catch { /* fall back to 0 — every slice starts fresh */ }
+
+    setParSlices(ranges.map(rg => ({
+      ...rg,
+      progress: Math.max(0, Math.min(doneImageCount, rg.rangeEnd) - rg.rangeStart),
+      status: 'running' as const,
+    })));
+
+    ranges.forEach((rg, i) => {
+      const sliceResumeFrom = Math.max(rg.rangeStart, Math.min(doneImageCount, rg.rangeEnd));
+      runParallelSliceAttempt(i, rg.rangeStart, rg.rangeEnd, sliceResumeFrom, bucket, 0);
+    });
+  }
+
+  async function runParallelSliceAttempt(index: number, rangeStart: number, rangeEnd: number, resumeFrom: number, bucket: string, resumeCount: number) {
+    parLastProgressRef.current[index] = resumeFrom - rangeStart;
+    parLastProgressTimeRef.current[index] = Date.now();
+
+    try {
+      const r = await fetch('/api/nft-gen/export/range', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId: dbJobIdRef.current, bucket,
+          format: imgExt, width: targetW, height: targetH,
+          collectionName: collName, description, nameFormat,
+          rangeStart, rangeEnd, resumeFrom,
+        }),
+      });
+      let sliceId: string;
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        if (r.status === 409 && d.exportId) {
+          sliceId = d.exportId;
+        } else {
+          throw new Error(d.error ?? `HTTP ${r.status}`);
+        }
+      } else {
+        sliceId = (await r.json()).exportId;
+      }
+
+      if (parPollRefs.current[index]) clearInterval(parPollRefs.current[index]!);
+      parPollRefs.current[index] = setInterval(async () => {
+        try {
+          const pr = await fetch(`/api/nft-gen/export/range/${encodeURIComponent(sliceId)}`);
+          if (!pr.ok) return;
+          const state = await pr.json();
+          const newProgress = state.progress ?? 0;
+
+          setParSlices(prev => prev.map((s, i) => i === index ? { ...s, progress: newProgress, status: state.status } : s));
+
+          if (newProgress !== parLastProgressRef.current[index]) {
+            parLastProgressRef.current[index] = newProgress;
+            parLastProgressTimeRef.current[index] = Date.now();
+          }
+
+          if (state.status === 'done') {
+            clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
+            return;
+          }
+          if (state.status === 'error') {
+            clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
+            setParStatus('error');
+            setParError(`Slice ${index + 1} failed: ${state.error ?? 'unknown error'}`);
+            return;
+          }
+
+          const stalledForMs = Date.now() - parLastProgressTimeRef.current[index];
+          if (stalledForMs > 30_000) {
+            clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
+            const nextResumeCount = (parResumeCountRef.current[index] ?? 0) + 1;
+            parResumeCountRef.current[index] = nextResumeCount;
+            if (nextResumeCount > PAR_MAX_AUTO_RESUMES) {
+              setParStatus('error');
+              setParError(`Slice ${index + 1} stalled after ${PAR_MAX_AUTO_RESUMES} resume attempts.`);
+              return;
+            }
+            runParallelSliceAttempt(index, rangeStart, rangeEnd, rangeStart + newProgress, bucket, nextResumeCount);
+          }
+        } catch { /* retry next tick */ }
+      }, 2000);
+    } catch (e: any) {
+      setParStatus('error');
+      setParError(`Slice ${index + 1} failed to start: ${e.message ?? 'unknown error'}`);
+    }
+  }
+
+  // Overall status derives from the slices themselves rather than being set
+  // independently — avoids the two ever disagreeing.
+  useEffect(() => {
+    if (parStatus !== 'running' || parSlices.length === 0) return;
+    if (parSlices.every(s => s.status === 'done')) {
+      setParStatus('done');
+      if (parTickRef.current) { clearInterval(parTickRef.current); parTickRef.current = null; }
+      Object.values(parPollRefs.current).forEach(id => { if (id) clearInterval(id); });
+    }
+  }, [parSlices, parStatus]);
+
+  const parTotalProgress = parSlices.reduce((sum, s) => sum + s.progress, 0);
+
   function formatDuration(totalSec: number): string {
     if (!Number.isFinite(totalSec) || totalSec < 0) return '—';
     const h = Math.floor(totalSec / 3600);
@@ -1561,6 +1715,70 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* ── Parallel Export (Fast) ── */}
+      {dbSaved && dbJobIdRef.current && (
+        <div className="exp-fb-card exp-svr-card" data-testid="parallel-export-section">
+          <div className="exp-fb-header">
+            <div className="exp-fb-title">⚡ Parallel Export (Fast)</div>
+            <div className="exp-fb-sub">
+              Runs {PARALLEL_SLICE_COUNT} slices of the collection concurrently for real wall-clock speedup on large
+              collections. No pre-built ZIP or NFT Records sync here — use those separately once this finishes.
+            </div>
+          </div>
+
+          {parStatus === 'idle' && (
+            <button
+              className="btn btn-primary"
+              onClick={startParallelExport}
+              disabled={!(svrBucket === '__new__' ? svrNewBucket.trim() : svrBucket.trim())}
+              style={{ marginTop: 10 }}
+            >
+              ⚡ Start Parallel Export
+            </button>
+          )}
+
+          {(parStatus === 'running' || parStatus === 'done') && (
+            <div style={{ marginTop: 12 }}>
+              <ProgressBar value={parTotalProgress} max={supply} />
+              <div className="exp-step-count">{parTotalProgress.toLocaleString()} / {supply.toLocaleString()}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                Elapsed: {formatDuration(parElapsedSec)}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                {parSlices.map((s, i) => (
+                  <div
+                    key={i}
+                    title={`#${s.rangeStart + 1}-${s.rangeEnd}: ${s.progress}/${s.rangeEnd - s.rangeStart} (${s.status})`}
+                    style={{
+                      fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                      background: s.status === 'done' ? 'var(--accent2, #22c55e)' : 'var(--hover)',
+                      color: s.status === 'done' ? '#fff' : 'var(--text-muted)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    #{i + 1}: {s.progress}/{s.rangeEnd - s.rangeStart}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {parStatus === 'done' && (
+            <div className="exp-banner exp-banner-saved" style={{ marginTop: 12 }}>
+              <CheckIcon size={15} />
+              <span>All {PARALLEL_SLICE_COUNT} slices complete — {parTotalProgress.toLocaleString()} NFTs uploaded in {formatDuration(parElapsedSec)}.</span>
+            </div>
+          )}
+
+          {parStatus === 'error' && (
+            <div className="exp-banner exp-banner-error" style={{ marginTop: 12 }}>
+              <span>{parError}</span>
+              <button className="exp-retry-btn" onClick={() => { setParStatus('idle'); setParError(''); }}>↺ Reset</button>
+            </div>
+          )}
         </div>
       )}
 
