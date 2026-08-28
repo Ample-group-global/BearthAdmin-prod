@@ -1019,7 +1019,22 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           try { const r = await fetch(`/api/layers?collectionId=${collectionId}`); layerData = await r.json(); } catch { }
         }
       }
-      if (!layerData.length) return;
+      if (!layerData.length) {
+        // Generation can finish before this component's own `layers` state
+        // has loaded (Settings -> Export happens fast), and the fallback
+        // fetch above can lose that same race too. This used to return
+        // silently here -- the grid just stayed empty with zero indication
+        // anything failed, and the artist's only signal was clicking
+        // Generate again (which re-runs the whole generation a second time
+        // just to get a working reload). Retry like the display-items call
+        // below already does, instead of giving up on the first miss.
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+          return loadAndDisplayFromDb(jobId, attempt + 1);
+        }
+        console.error('[loadAndDisplayFromDb] layers never loaded after 3 attempts — grid will stay empty.');
+        return;
+      }
       setLayers(layerData);
 
       const rels = [...new Set(
