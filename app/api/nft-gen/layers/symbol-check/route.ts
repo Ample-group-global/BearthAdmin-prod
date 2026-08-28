@@ -1,0 +1,8 @@
+import { NextRequest } from "next/server";
+import { proxyToApi } from "../../../../../lib/api-proxy";
+
+export async function GET(req: NextRequest) {
+  return proxyToApi(req, "/api/nft-gen/layers/symbol-check", {
+    searchParams: req.nextUrl.searchParams,
+  });
+}

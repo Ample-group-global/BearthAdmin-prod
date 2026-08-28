@@ -30,7 +30,7 @@ function targetProbForTier(tierLabel: string): number {
 export default function RarityModal({
   layer, weights, supply, onSave, onDelete, onClose,
   allLayers, conflicts, onSaveConflicts, conflictSaveError, onSaveLayerMeta, onRenameTrait, focusStem,
-  weightSaveError, onDismissWeightSaveError,
+  weightSaveError, onDismissWeightSaveError, onTraitSaved,
 }) {
   // Local state for weights - starts from parent weights
   const [localWs, setLocalWs] = useState<Record<string, number>>(() => ({ ...weights }));
@@ -100,6 +100,13 @@ export default function RarityModal({
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error ?? `Save failed (HTTP ${res.status})`);
       }
+      // The parent's own layer.assets copy (what the Organize sidebar's Tier
+      // Distribution panel and the grid's own filter-tab counts both read)
+      // never learned about this tier change — only this modal's local state
+      // did. Confirmed live: three traits set to "Legendary" here, sidebar
+      // still showed Legendary: 0 the whole time. Tell the parent to refetch
+      // now that the DB write actually succeeded.
+      onTraitSaved?.();
     } catch (e: any) {
       // A silently-swallowed failure here used to leave the dropdown looking
       // selected locally (localWs already updated above) while the server
@@ -143,6 +150,10 @@ export default function RarityModal({
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error ?? `Save failed (HTTP ${res.status})`);
       }
+      // Same staleness gap as applyTier above -- the exact-weight input also
+      // saves straight to the DB, but the parent never knew unless "Save
+      // Rarity" got clicked afterward.
+      onTraitSaved?.();
     } catch (e: any) {
       if (prevWeight != null) setW(asset.stem, prevWeight);
       console.error(`[applyWeight] failed to save weight for ${asset.stem}:`, e);

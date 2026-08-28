@@ -318,6 +318,7 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
   const [uploadDone,    setUploadDone]    = useState(false);
   const [uploadMsg,     setUploadMsg]     = useState('');
   const [uploadFailedLayers, setUploadFailedLayers] = useState<string[]>([]);
+  const [symbolConflict, setSymbolConflict] = useState('');
   // Tracks the REAL background S3 upload — separate from uploadDone, which
   // flips true the instant files are parsed client-side (for a snappy UI)
   // long before doServerUpload() below has actually finished. Continuing
@@ -371,12 +372,45 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
 
   async function handleFolderUpload(files, replace = false) {
     if (!files.length) return;
+    setSymbolConflict('');
+
+    // Every session prefix now leads with the Token Symbol (e.g. "BV9999-...")
+    // so a bucket folder can be traced back to its collection at a glance —
+    // previously it was pure random noise (e.g. "umtcbemz2vrn8q1"), no way to
+    // tell which collection a folder belonged to without cross-checking the DB.
+    const symbol = (collection.symbol ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!symbol) {
+      setSymbolConflict('Set a Token Symbol before uploading layers — it identifies this upload in storage.');
+      return;
+    }
+
+    // Block a second upload under a symbol that's already in storage, rather
+    // than silently accumulating duplicate layer sets under different random
+    // prefixes with no way to tell which one is "the" collection.
     setUploading(true);
+    setUploadMsg('Checking symbol…');
+    try {
+      const checkRes = await fetch(`/api/nft-gen/layers/symbol-check?symbol=${encodeURIComponent(symbol)}`);
+      const checkData = await checkRes.json().catch(() => ({}));
+      if (checkData?.exists) {
+        setUploading(false);
+        setUploadMsg('');
+        setSymbolConflict(`A layer upload for symbol "${symbol}" already exists in storage (${checkData.prefix}) — change the Token Symbol or reuse the existing upload instead of uploading again.`);
+        return;
+      }
+    } catch {
+      // Check endpoint unreachable — fail open rather than block a legitimate
+      // upload on a network blip; the collision this check prevents is a
+      // storage-hygiene concern, not data corruption (each prefix is still
+      // unique via the random suffix below).
+    }
+
     setUploadMsg('Reading files…');
     lastFilesRef.current = files;
 
-    // A fresh, unique namespace for THIS drop — see parseLayersFromFiles.
-    const sessionPrefix = `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    // A fresh, unique namespace for THIS drop, prefixed with the Token Symbol
+    // for identification — see parseLayersFromFiles.
+    const sessionPrefix = `${symbol}-u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     sessionPrefixRef.current = sessionPrefix;
 
     // ── 1. Parse layers client-side — instant ────────────────────────────────
@@ -426,7 +460,23 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
       let uploadedSoFar = 0;
       setUploadMsg(`Saving assets to storage… 0/${totalFiles} files`);
 
-      async function uploadLayerChunked(layer: string, entries: { file: File; subpath: string }[]) {
+      // Numeric-suffix order (1-1, 1-2, ... 1-24), not whatever order the
+      // browser's directory read returned (often alphabetical: 1-1, 1-10,
+      // 1-11, ..., 1-2) — files must reach the server, and land in the
+      // bucket, in the same order an artist would list them.
+      function stemOf(entry: { file: File; subpath: string }) {
+        const name = entry.subpath || entry.file.name;
+        return name.replace(/\.[^.]+$/, '');
+      }
+      function naturalStemCompare(a: string, b: string) {
+        const na = Number(a.split('-').pop());
+        const nb = Number(b.split('-').pop());
+        if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+      }
+
+      async function uploadLayerChunked(layer: string, entriesUnsorted: { file: File; subpath: string }[]) {
+        const entries = [...entriesUnsorted].sort((a, b) => naturalStemCompare(stemOf(a), stemOf(b)));
         const chunks: typeof entries[] = [];
         let cur: typeof entries = [], curBytes = 0;
         for (const entry of entries) {
@@ -455,29 +505,32 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
           setUploadMsg(`Saving assets to storage… ${uploadedSoFar}/${totalFiles} files`);
         }
 
-        // Stale-file cleanup only runs once every chunk for this layer has
-        // landed — see /upload/finalize. Best-effort: the upload itself
-        // already succeeded above, so a cleanup hiccup shouldn't fail the drop.
-        await fetch('/api/upload/finalize', {
+        // Stale-file cleanup + real-bucket verification, run once every
+        // chunk for this layer has landed — see /upload/finalize. Its
+        // response confirms every uploaded key is actually present in the
+        // bucket right now, not just that the PUT calls reported success.
+        const finalizeRes = await fetch('/api/upload/finalize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ layer, sessionPrefix, keptKeys }),
-        }).catch(() => {});
+        });
+        const finalizeData = await finalizeRes.json().catch(() => ({}));
+        if (finalizeData?.missing?.length) {
+          throw new Error(`${finalizeData.missing.length} file(s) missing from bucket after upload: ${finalizeData.missing.slice(0, 3).join(', ')}${finalizeData.missing.length > 3 ? '…' : ''}`);
+        }
 
         return layer;
       }
 
-      // Layers used to all upload at once (Promise.allSettled over every
-      // layer with zero throttling) -- for an 8-layer, 200+ file collection
-      // that's a burst of many concurrent /api/upload requests landing on
-      // Vercel at the same instant, which is exactly the kind of load that
-      // triggers intermittent per-layer failures under real traffic
-      // (confirmed live: 6/8 layers failed on one run, then 0/8 on an
-      // identical retry seconds later -- a load/timing issue, not a data
-      // problem). Capping how many layers upload at once trades a little
-      // wall-clock time for not overloading the endpoint in the first place.
-      const LAYER_UPLOAD_CONCURRENCY = 3;
-      const layerEntries = Object.entries(groups);
+      // 2 layers concurrent, each still processed in numeric folder order
+      // (00_BACKGROUND, 01_BEAR HEAD, ...) via the sorted queue below --
+      // fully serial (1) was too slow on this machine's current bandwidth;
+      // the old default (3, uncapped per-file concurrency too) is what
+      // caused real multi-layer-burst failures noted below. Correctness
+      // doesn't depend on completion order -- /upload/finalize verifies
+      // every expected file actually landed, regardless of order.
+      const LAYER_UPLOAD_CONCURRENCY = 2;
+      const layerEntries = Object.entries(groups).sort(([a], [b]) => naturalStemCompare(a, b));
       const results: PromiseSettledResult<string>[] = new Array(layerEntries.length);
       let cursor = 0;
       async function uploadWorker() {
@@ -813,6 +866,11 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
                 </>
               )}
             </div>
+            {symbolConflict && (
+              <div data-testid="symbol-conflict-warning" style={{ color: '#dc2626', fontSize: 13, marginTop: 8 }}>
+                ⚠ {symbolConflict}
+              </div>
+            )}
             {uploadFailedLayers.length > 0 && (
               <div style={{ color: '#dc2626', fontSize: 13, marginTop: 8 }}>
                 ⚠ {uploadFailedLayers.length} layer(s) failed to upload to storage: {uploadFailedLayers.join(', ')}.

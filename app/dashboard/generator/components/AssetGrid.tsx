@@ -81,7 +81,6 @@ export default function AssetGrid({ layer, layerWeights, supply, onWeightChange,
             weight={ws[asset.stem] ?? asset.defaultWeight ?? 1}
             totalWeight={totalW}
             supply={supply}
-            onChange={(stem, val) => onWeightChange(layer.folder, stem, val)}
             onDelete={handleDelete}
             onOpen={() => onOpenLayerModal?.(layer.folder, asset.stem)}
           />

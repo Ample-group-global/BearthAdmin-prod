@@ -108,36 +108,47 @@ export default function Page() {
         setSessionRestored(true);
         const s = sessionData?.supply;
         if (s && s > 0) setCollection(prev => ({ ...prev, supply: s }));
-        fetch(`/api/nft-gen/collections/${savedId}`)
+        // A single transient failure here (e.g. a pooled DB connection that
+        // died mid-request — see project-bearthapi-v1-auth-pool-stale-connection-bug)
+        // used to leave collection.supply permanently blank ('—' on the
+        // Export tab) with no retry and no indication anything went wrong.
+        // One retry, then a visible (non-fatal) warning, mirrors the fix
+        // already applied to the session-cookie save above.
+        const fetchCollection = () => fetch(`/api/nft-gen/collections/${savedId}`)
           .then(r => r.ok ? r.json() : null)
-          .then(data => {
-            const c = data?.collection ?? data;
-            if (!c?.id) {
-              // The collection this browser had cached no longer exists in the
-              // DB (deleted from elsewhere) — clear the stale cookie and reset
-              // to a fresh Settings tab instead of leaving the summary card and
-              // Generate button showing dead data that fails on every click.
-              fetch('/api/session/collection', { method: 'DELETE' }).catch(() => {});
-              setCollectionId(null);
-              setSessionRestored(false);
-              setCollection(DEFAULT_COLLECTION);
-              return;
-            }
-            setCollection(prev => ({
-              ...prev,
-              name:        c.name        ?? prev.name,
-              description: c.description ?? prev.description,
-              symbol:      c.symbol      ?? prev.symbol,
-              blockchain:  c.network ?? 'ethereum',
-              width:       c.formatWidth  ?? prev.width,
-              height:      c.formatHeight ?? prev.height,
-              supply:      c.supply       ?? prev.supply,
-              nameFormat:  c.nameFormat   ?? prev.nameFormat,
-              format:      c.formatType   ?? prev.format,
-            }));
-            if (Array.isArray(c.conflictRules)) setConflicts(c.conflictRules);
-          })
-          .catch(() => {});
+          .catch(() => null);
+        fetchCollection().then(async data => {
+          if (!data) data = await fetchCollection();
+          if (!data) {
+            setSyncError('Could not load this collection’s saved details — some fields may be missing until you reload the page.');
+            return;
+          }
+          const c = data?.collection ?? data;
+          if (!c?.id) {
+            // The collection this browser had cached no longer exists in the
+            // DB (deleted from elsewhere) — clear the stale cookie and reset
+            // to a fresh Settings tab instead of leaving the summary card and
+            // Generate button showing dead data that fails on every click.
+            fetch('/api/session/collection', { method: 'DELETE' }).catch(() => {});
+            setCollectionId(null);
+            setSessionRestored(false);
+            setCollection(DEFAULT_COLLECTION);
+            return;
+          }
+          setCollection(prev => ({
+            ...prev,
+            name:        c.name        ?? prev.name,
+            description: c.description ?? prev.description,
+            symbol:      c.symbol      ?? prev.symbol,
+            blockchain:  c.network ?? 'ethereum',
+            width:       c.formatWidth  ?? prev.width,
+            height:      c.formatHeight ?? prev.height,
+            supply:      c.supply       ?? prev.supply,
+            nameFormat:  c.nameFormat   ?? prev.nameFormat,
+            format:      c.formatType   ?? prev.format,
+          }));
+          if (Array.isArray(c.conflictRules)) setConflicts(c.conflictRules);
+        });
       }
       // No session cookie (e.g. a fresh browser, cleared cookies, or a
       // different artist who has never used this tool yet) means a fresh,
@@ -292,7 +303,14 @@ export default function Page() {
         cid = data?.collection?.id ?? data?.id ?? null;
         if (cid) {
           setCollectionId(cid);
-          await fetch('/api/session/collection', {
+          // The collection itself is already saved at this point — this
+          // cookie is only "which collection to resume on a fresh page
+          // load." A silently-swallowed failure here left real, saved data
+          // indistinguishable from data loss on the next visit (Organize
+          // tab shows "No layers yet" with 214 real traits sitting in the
+          // DB). One retry, then a visible (non-fatal) warning instead of
+          // silence if it still doesn't take.
+          const rememberCollection = () => fetch('/api/session/collection', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -300,7 +318,12 @@ export default function Page() {
               name:   collection.name,
               supply: collection.supply,
             }),
-          }).catch(() => {});
+          });
+          let remembered = await rememberCollection().then(r => r.ok).catch(() => false);
+          if (!remembered) remembered = await rememberCollection().then(r => r.ok).catch(() => false);
+          if (!remembered) {
+            setSyncError('Collection saved, but this browser could not remember it for next time — reloading this page may show an empty Organize tab. Avoid refreshing until you finish this session.');
+          }
         }
       } else {
         // Update existing — sync all editable fields back to DB
@@ -557,6 +580,7 @@ export default function Page() {
               onSave={(newWs: Record<string, number>) => {
                 Object.entries(newWs).forEach(([stem, val]) => handleWeightChange(gearFolder, stem, val));
               }}
+              onTraitSaved={loadLayers}
               onDelete={async (asset: { id?: string; rel?: string }) => {
                 if (!asset.rel || !asset.id) return;
                 await fetch(`/api/nft-gen/traits/${asset.id}`, { method: 'DELETE' });

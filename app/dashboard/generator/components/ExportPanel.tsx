@@ -1652,8 +1652,9 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           one gets you the slow result, this stays hidden until it's merged
           into a single always-fast flow. Code kept intact — it's still the
           only path that builds a pre-built ZIP and bundles NFT Records sync
-          in one click, both useful to keep for reference/fallback. ── */}
-      {false && dbSaved && dbJobIdRef.current && (
+          in one click, both useful to keep for reference/fallback.
+          Re-enabled per explicit request to test this path specifically. ── */}
+      {dbSaved && dbJobIdRef.current && (
         <div className="exp-fb-card exp-svr-card" data-testid="server-export-section">
           <div className="exp-fb-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div>

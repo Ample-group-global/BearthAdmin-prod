@@ -1,15 +1,15 @@
 // @ts-nocheck
 'use client';
-import { calcRarity, positionForProb } from '../../../../lib/studio/probability';
+import { calcRarity } from '../../../../lib/studio/probability';
 import { resolveTier } from '../../../../lib/studio/tiers';
 import { useLayerFiles } from '../LayerFilesContext';
 
-// Clicking a card used to open its own single-trait modal (CardModal, removed) —
-// now it opens the same layer modal used by the sidebar gear icon, scrolled to
-// this trait, via onOpen. Two different popups for what looked like the same
-// kind of editing was confusing; there's exactly one now. The inline slider on
-// the card itself still lets you drag weight without opening anything.
-export default function AssetCard({ asset, weight, totalWeight, supply, onChange, onDelete, onOpen }) {
+// Clicking a card opens the same layer modal used by the sidebar gear icon,
+// scrolled to this trait, via onOpen — the only place weight/tier get edited
+// now (single source of truth; this card used to also carry its own inline
+// slider, which duplicated the modal's control on the exact same value and
+// could go stale relative to it).
+export default function AssetCard({ asset, weight, totalWeight, supply, onDelete, onOpen }) {
   const { tier: liveTier, pct } = calcRarity(weight, totalWeight, supply);
   // Prefers the artist's own explicit classification (manually picked, or
   // Excel-supplied) over the live weight computation — this card used to
@@ -17,12 +17,6 @@ export default function AssetCard({ asset, weight, totalWeight, supply, onChange
   // same trait could show "Epic" here and "Rare" in the Rarity modal.
   const tier = resolveTier(asset.rarityTier, liveTier);
   const { getBlobUrl } = useLayerFiles();
-
-  // Tier zone positions on 0-100 slider scale (same math as the layer modal)
-  const otherW = Math.max(0, totalWeight - weight);
-  const lPos = positionForProb(otherW, 0.01);
-  const ePos = positionForProb(otherW, 0.05);
-  const rPos = positionForProb(otherW, 0.15);
 
   function handleDelete(e) {
     e.stopPropagation();
@@ -59,27 +53,6 @@ export default function AssetCard({ asset, weight, totalWeight, supply, onChange
         {asset.rel && (
           <button className="card-delete-btn" onClick={handleDelete} title="Delete trait">🗑</button>
         )}
-      </div>
-
-      <div
-        className="card-slider-row"
-        style={{ '--tier-color': tier.color } as any}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Tier zone bar — shows where each rarity tier starts on this card's slider */}
-        <div className="card-tier-bar">
-          <div style={{ width: `${lPos}%`,                    background: '#F59E0B' }} />
-          <div style={{ width: `${Math.max(0,ePos-lPos)}%`,   background: '#A855F7' }} />
-          <div style={{ width: `${Math.max(0,rPos-ePos)}%`,   background: '#3B82F6' }} />
-          <div style={{ width: `${Math.max(0,100-rPos)}%`,    background: '#D1D5DB' }} />
-        </div>
-        <input
-          className="range-slider"
-          type="range"
-          min="0" max="100" step="0.5"
-          value={Math.min(weight, 100)}
-          onChange={e => onChange(asset.stem, parseFloat(e.target.value))}
-        />
       </div>
 
       <div className="card-bottom">
