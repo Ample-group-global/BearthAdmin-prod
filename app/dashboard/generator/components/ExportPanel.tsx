@@ -217,6 +217,8 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           setSvrGenStatus('done');
           setDbSaved(true);
           setGridLoadError(!loaded);
+          setFilter(null);
+          setTierFilter(null);
           setPhase('done');
 
           // A real export (images + metadata + CIDs, run to completion) may
@@ -1001,6 +1003,8 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           setSvrGenStatus('done');
           setDbSaved(true);
           setGridLoadError(!loaded);
+          setFilter(null);
+          setTierFilter(null);
           setDbSaving(false);
           setPhase('done');
         } else if (pr.status === 'error') {
@@ -1430,7 +1434,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           </div>
 
           <div className="exp-top-right">
-            <button className="btn btn-ghost" onClick={() => { setPhase('idle'); setRarityItems([]); setGridLoadError(false); }}>
+            <button className="btn btn-ghost" onClick={() => { setPhase('idle'); setRarityItems([]); setGridLoadError(false); setFilter(null); setTierFilter(null); }}>
               ↺ Regenerate
             </button>
           </div>
