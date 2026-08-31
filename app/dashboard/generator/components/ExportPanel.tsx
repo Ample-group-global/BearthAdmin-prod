@@ -29,6 +29,13 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   const [dbError, setDbError] = useState('');
   const [dbSaving, setDbSaving] = useState(false);
   const [dbSaved, setDbSaved] = useState(false);
+  // True generation/save can succeed while the separate call that fetches
+  // those rows back for grid display still fails (transient timeout/5xx) —
+  // previously that left the grid silently empty forever with the success
+  // banners still claiming everything worked. This tracks that specific
+  // failure so the UI can say so honestly instead of showing the generic
+  // "No NFTs match this filter" message for a filter that was never set.
+  const [gridLoadError, setGridLoadError] = useState(false);
 
   // ── Server-side export state ──────────────────────────────────────────────
   const [svrBucket, setSvrBucket] = useState('');
@@ -205,10 +212,11 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           const latestJob = data.jobs[0];
           if (generationStartedRef.current) return; // real generation won the race — don't set dbJobIdRef to a stale job
           dbJobIdRef.current = latestJob.id;
-          await loadAndDisplayFromDb(latestJob.id);
+          const loaded = await loadAndDisplayFromDb(latestJob.id);
           if (cancelled || generationStartedRef.current) return;
           setSvrGenStatus('done');
           setDbSaved(true);
+          setGridLoadError(!loaded);
           setPhase('done');
 
           // A real export (images + metadata + CIDs, run to completion) may
@@ -985,12 +993,14 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         if (pr.status === 'done') {
           if (svrGenPollRef.current) { clearInterval(svrGenPollRef.current); svrGenPollRef.current = null; }
           const jobIdDone = pr.jobId ?? null;
+          let loaded = true;
           if (jobIdDone) {
             dbJobIdRef.current = jobIdDone;
-            await loadAndDisplayFromDb(jobIdDone);
+            loaded = await loadAndDisplayFromDb(jobIdDone);
           }
           setSvrGenStatus('done');
           setDbSaved(true);
+          setGridLoadError(!loaded);
           setDbSaving(false);
           setPhase('done');
         } else if (pr.status === 'error') {
@@ -1011,7 +1021,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
     }
   }
 
-  async function loadAndDisplayFromDb(jobId: string, attempt = 0) {
+  async function loadAndDisplayFromDb(jobId: string, attempt = 0): Promise<boolean> {
     try {
       let layerData: any[] = layersProp.length ? layersProp : layers;
       if (!layerData.length) {
@@ -1033,7 +1043,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           return loadAndDisplayFromDb(jobId, attempt + 1);
         }
         console.error('[loadAndDisplayFromDb] layers never loaded after 3 attempts — grid will stay empty.');
-        return;
+        return false;
       }
       setLayers(layerData);
 
@@ -1055,7 +1065,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
           return loadAndDisplayFromDb(jobId, attempt + 1);
         }
-        return;
+        return false;
       }
 
       const itemsResult = await itemsResp.json().catch(() => ({ items: [] }));
@@ -1065,7 +1075,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
           return loadAndDisplayFromDb(jobId, attempt + 1);
         }
-        return;
+        return false;
       }
 
       const displayed = itemsResult.items.map((item: any) => {
@@ -1126,8 +1136,10 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           setBitmapsVer(v => v + 1);
         }
       })().catch(() => { });
+      return true;
     } catch (e) {
       console.error('[loadAndDisplayFromDb]', e);
+      return false;
     }
   }
 
@@ -1418,7 +1430,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           </div>
 
           <div className="exp-top-right">
-            <button className="btn btn-ghost" onClick={() => { setPhase('idle'); setRarityItems([]); }}>
+            <button className="btn btn-ghost" onClick={() => { setPhase('idle'); setRarityItems([]); setGridLoadError(false); }}>
               ↺ Regenerate
             </button>
           </div>
@@ -1526,6 +1538,22 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
                 bitmapsVer={bitmapsVer}
               />
             ))}
+          </div>
+        ) : gridLoadError && rarityItems.length === 0 ? (
+          <div className="exp-empty-filter">
+            <div>Grid failed to load — your {supply.toLocaleString()} items are saved in the database, this is just a display problem.</div>
+            <button
+              className="btn btn-ghost"
+              style={{ marginTop: 8 }}
+              onClick={async () => {
+                if (!dbJobIdRef.current) return;
+                setGridLoadError(false);
+                const ok = await loadAndDisplayFromDb(dbJobIdRef.current, 0);
+                setGridLoadError(!ok);
+              }}
+            >
+              ↻ Retry loading
+            </button>
           </div>
         ) : (
           <div className="exp-empty-filter">No NFTs match this filter.</div>
