@@ -6,6 +6,26 @@ import NftPopup from './NftPopup';
 import { TIER_META, Spinner, CheckIcon, RarityCard, ProgressBar, HLayerFilter } from './ExportGridParts';
 import { fetchWithTimeout } from '../../../../lib/fetchWithTimeout';
 
+// Every `error` field this component reads is assumed to be a plain string
+// from our own Express error handler, but Vercel's own platform-level error
+// responses (a function that times out or crashes before our code runs at
+// all) return `error` as a nested {code, message} object instead. Feeding
+// that object straight into `new Error(x)` or a template literal silently
+// stringifies it to the literal text "[object Object]" -- confirmed live
+// during Bearth V2's export ("Slice 5 failed to start: [object Object]").
+// Route every error-field read through this so any shape produces a real
+// message instead.
+function errText(e) {
+  if (!e) return '';
+  if (typeof e === 'string') return e;
+  if (typeof e === 'object') {
+    if (typeof e.message === 'string' && e.message) return e.message;
+    if (typeof e.code === 'string' && e.code) return e.code;
+    try { return JSON.stringify(e); } catch { /* fall through */ }
+  }
+  return String(e);
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function ExportPanel({ weights, layers: layersProp = [], collection, conflicts, collectionId = null }) {
   const supply = Number(collection?.supply ?? 0);
@@ -79,16 +99,8 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   // Real missing-CID count shown up front — previously this whole section
   // was a collapsed "Advanced" block with no indication of whether it was
   // even needed, so the artist had no way to know to open it.
+  // (effect that populates this lives further down, after parStatus exists)
   const [missingCidCount, setMissingCidCount] = useState<number | null>(null);
-  useEffect(() => {
-    if (!dbSaved || !dbJobIdRef.current || cidStatus !== 'idle') return;
-    let cancelled = false;
-    fetch(`/api/nft-gen/export/cid-status?jobId=${encodeURIComponent(dbJobIdRef.current)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled && d) setMissingCidCount(d.missing ?? 0); })
-      .catch(() => { });
-    return () => { cancelled = true; };
-  }, [dbSaved, cidStatus]);
 
   // ── Server-side generation state ──────────────────────────────────────────
   const [svrGenStatus, setSvrGenStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
@@ -347,7 +359,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           svrLastProgressTimeRef.current = Date.now();
         } else {
           setSvrStatus('error');
-          setSvrError(d.error ?? 'Server error');
+          setSvrError(errText(d.error) || 'Server error');
           return;
         }
       } else {
@@ -366,7 +378,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         if (!resp.ok) {
           clearInterval(svrPollRef.current!); svrPollRef.current = null;
           setSvrStatus('error');
-          setSvrError(pr?.error ?? 'Server restarted during export. Please try again.');
+          setSvrError(errText(pr?.error) || 'Server restarted during export. Please try again.');
           return;
         }
         const newProgress = pr.progress ?? 0;
@@ -388,7 +400,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           return;
         } else if (pr.status === 'error') {
           setSvrStatus('error');
-          setSvrError(pr.error ?? 'Export failed');
+          setSvrError(errText(pr.error) || 'Export failed');
           if (svrPollRef.current) { clearInterval(svrPollRef.current); svrPollRef.current = null; }
           if (svrTickRef.current) { clearInterval(svrTickRef.current); svrTickRef.current = null; }
           return;
@@ -446,6 +458,29 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   const parLastProgressTimeRef = useRef<Record<number, number>>({});
   const parResumeCountRef = useRef<Record<number, number>>({});
   const PAR_MAX_AUTO_RESUMES = 100;
+
+  useEffect(() => {
+    if (!dbSaved || !dbJobIdRef.current || cidStatus !== 'idle') return;
+    let cancelled = false;
+    const fetchMissing = () => {
+      fetch(`/api/nft-gen/export/cid-status?jobId=${encodeURIComponent(dbJobIdRef.current!)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (!cancelled && d) setMissingCidCount(d.missing ?? 0); })
+        .catch(() => { });
+    };
+    fetchMissing();
+    // A single fetch right after Generate finishes was accurate in that
+    // moment (export hasn't started, everything really is missing a CID)
+    // but then never updated again -- during a live 9,999-item export this
+    // showed a frozen "9,999 missing" the whole way through even once the
+    // real count had dropped to near-zero. Poll while either export path is
+    // actually running so the count reflects live progress instead.
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (svrStatus === 'running' || parStatus === 'running') {
+      interval = setInterval(fetchMissing, 20_000);
+    }
+    return () => { cancelled = true; if (interval) clearInterval(interval); };
+  }, [dbSaved, cidStatus, svrStatus, parStatus]);
 
   function computeSliceRanges(total: number, count: number): Array<{ rangeStart: number; rangeEnd: number }> {
     const size = Math.ceil(total / count);
@@ -541,7 +576,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         if (r.status === 409 && d.exportId) {
           sliceId = d.exportId;
         } else {
-          throw new Error(d.error ?? `HTTP ${r.status}`);
+          throw new Error(errText(d.error) || `HTTP ${r.status}`);
         }
       } else {
         sliceId = (await r.json()).exportId;
@@ -569,7 +604,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
             if (state.status === 'error') {
               clearInterval(parPollRefs.current[index]!); parPollRefs.current[index] = null;
               setParStatus('error');
-              setParError(`Slice ${index + 1} failed: ${state.error ?? 'unknown error'}`);
+              setParError(`Slice ${index + 1} failed: ${errText(state.error) || 'unknown error'}`);
               return;
             }
           }
@@ -601,7 +636,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       }, 2000);
     } catch (e: any) {
       setParStatus('error');
-      setParError(`Slice ${index + 1} failed to start: ${e.message ?? 'unknown error'}`);
+      setParError(`Slice ${index + 1} failed to start: ${errText(e?.message) || errText(e) || 'unknown error'}`);
     }
   }
 
@@ -647,7 +682,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       });
       let d: any = null;
       try { d = await r.json(); } catch { /* empty or non-JSON body */ }
-      if (!r.ok) { setCidStatus('error'); setCidError(d?.error ?? `Server error (${r.status})`); return; }
+      if (!r.ok) { setCidStatus('error'); setCidError(errText(d?.error) || `Server error (${r.status})`); return; }
       const refreshId = d?.refreshId;
       if (!refreshId) { setCidStatus('error'); setCidError('No refreshId returned from server'); return; }
 
@@ -668,7 +703,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         }
         if (!resp.ok) {
           clearInterval(cidPollRef.current!); cidPollRef.current = null;
-          setCidStatus('error'); setCidError(pr?.error ?? 'Refresh failed');
+          setCidStatus('error'); setCidError(errText(pr?.error) || 'Refresh failed');
           return;
         }
         setCidProgress(pr.progress ?? 0);
@@ -680,7 +715,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           setCidStatus('done');
           clearInterval(cidPollRef.current!); cidPollRef.current = null;
         } else if (pr.status === 'error') {
-          setCidStatus('error'); setCidError(pr.error ?? 'Refresh failed');
+          setCidStatus('error'); setCidError(errText(pr.error) || 'Refresh failed');
           clearInterval(cidPollRef.current!); cidPollRef.current = null;
         }
       }, 2000);
@@ -745,7 +780,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       const resp = await fetch(`/api/nft-gen/export/download-zip/${dbJobIdRef.current}?${params.toString()}`);
       if (!resp.ok || !resp.body) {
         const err = await resp.json().catch(() => ({}));
-        throw new Error(err.error ?? `Download failed (${resp.status})`);
+        throw new Error(errText(err.error) || `Download failed (${resp.status})`);
       }
       // The fast path can't send a real Content-Length (the ZIP is built
       // on the fly, exact final size isn't known upfront) — it sends an
@@ -941,7 +976,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         body: JSON.stringify({ layers: layersProp }),
       }, 60_000);
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) { setError(d.error ?? 'Layer sync failed. Try again.'); return; }
+      if (!r.ok) { setError(errText(d.error) || 'Layer sync failed. Try again.'); return; }
       setLayerStatus(d.layersSynced > 0 ? 'ok' : 'empty');
       if (d.layersSynced === 0) setError('No layers were synced. Go to Settings → Continue to rebuild your layer list.');
     } catch {
@@ -969,7 +1004,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         body: JSON.stringify({ collectionId, editionSize: supply }),
       });
       const d = await r.json();
-      if (!r.ok) { setSvrGenStatus('error'); setSvrGenError(d.error ?? 'Server error'); return; }
+      if (!r.ok) { setSvrGenStatus('error'); setSvrGenError(errText(d.error) || 'Server error'); return; }
 
       const genId = d.generateId;
       let pollFailures = 0;
@@ -985,7 +1020,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         if (!resp.ok) {
           clearInterval(svrGenPollRef.current!); svrGenPollRef.current = null;
           setSvrGenStatus('error');
-          setSvrGenError(pr?.error ?? 'Server restarted during generation. Please try again.');
+          setSvrGenError(errText(pr?.error) || 'Server restarted during generation. Please try again.');
           return;
         }
 
@@ -1010,8 +1045,8 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
         } else if (pr.status === 'error') {
           if (svrGenPollRef.current) { clearInterval(svrGenPollRef.current); svrGenPollRef.current = null; }
           setSvrGenStatus('error');
-          setSvrGenError(pr.error ?? 'Generation failed');
-          if (/collection not found/i.test(pr.error ?? '')) {
+          setSvrGenError(errText(pr.error) || 'Generation failed');
+          if (/collection not found/i.test(errText(pr.error))) {
             // The collection backing this job was deleted from elsewhere while
             // generation was in flight — clear the stale cookie so a reload
             // lands on a fresh Settings tab instead of the same dead end.
@@ -1237,7 +1272,7 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
             });
             if (!res.ok) {
               const body = await res.json().catch(() => ({}));
-              const err = new Error(`Batch ${batchNum}/${totalBatches} failed (${res.status}): ${(body as any).error ?? 'server error'}`);
+              const err = new Error(`Batch ${batchNum}/${totalBatches} failed (${res.status}): ${errText((body as any).error) || 'server error'}`);
               if (res.status >= 400 && res.status < 500) (err as any).retryable = false;
               throw err;
             }
