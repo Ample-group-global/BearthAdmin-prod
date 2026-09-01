@@ -54,3 +54,6 @@ _tmp_*.json
 .env*
 _tmp_export_speed_test.js
 _tmp_export_progress_watch.js
+
+.vercel
+.env*
