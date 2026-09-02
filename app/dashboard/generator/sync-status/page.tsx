@@ -179,6 +179,32 @@ export default function SyncStatusPage() {
           // (see the 409 handling above), so tightening this costs nothing.
           const stalledForMs = Date.now() - lastProgressTimeRef.current[collectionId];
           if (stalledForMs > 30_000) {
+            // Before treating this as a real stall, check whether the export
+            // actually already finished — an upload that completes right as
+            // a poll is missed looks identical to a stalled one from here
+            // (progress just stops changing either way), and restarting a
+            // genuinely-finished export re-composites/re-uploads 9,999
+            // already-correct files for nothing. A real bucket listing is
+            // the only source that can't be fooled by a missed "done" poll.
+            const supply = collections.find(c => c.collectionId === collectionId)?.supply ?? 0;
+            if (supply > 0) {
+              try {
+                const br = await fetch(`/api/filebase/objects?bucket=${encodeURIComponent(bucket)}`);
+                if (br.ok) {
+                  const bdata = await br.json();
+                  const imgCount = (bdata.objects ?? []).filter((o: any) =>
+                    /^images\/\d+\.\w+$/.test(String(o.key ?? o.Key ?? ''))).length;
+                  if (imgCount >= supply) {
+                    clearInterval(pollRefs.current[key]);
+                    delete pollRefs.current[key];
+                    patchRow(collectionId, { filebase: 'done', message: `${supply.toLocaleString()} NFTs uploaded` });
+                    fetchStatus();
+                    return;
+                  }
+                }
+              } catch { /* bucket check failed — fall through to normal stall handling below */ }
+            }
+
             clearInterval(pollRefs.current[key]);
             delete pollRefs.current[key];
             const resumeCount = (resumeCountRef.current[collectionId] ?? 0) + 1;
