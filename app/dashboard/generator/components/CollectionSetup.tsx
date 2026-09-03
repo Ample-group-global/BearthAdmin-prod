@@ -329,6 +329,18 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
   // (layers are optional at this stage), so it must not block Save & Continue.
   const [serverUploadStatus, setServerUploadStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
   const [errors,        setErrors]        = useState({});
+  // "Name of each NFT" defaults to bare '#{{id}}' with no collection identity
+  // in it -- Bearth V7 shipped every metadata.json as "#1" instead of
+  // "Bearth #1" because nothing ever nudged this field once Collection Name
+  // was filled in, whether by a human or by the Playwright automation script
+  // (root-caused 2026-09-03: neither of the two production scripts, nor a
+  // human filling the form by hand, gets a collection-identifying name
+  // unless they think to edit this specific field). Auto-derive it from the
+  // Collection Name as the user types, exactly like a slug field, so the
+  // preview is always meaningful by default -- but stop the moment the user
+  // edits Name Format directly, so a deliberate custom format is never
+  // silently overwritten.
+  const [nameFormatEdited, setNameFormatEdited] = useState(false);
   const [excelData,     setExcelData]     = useState({ names: {}, weights: {}, rarities: {} });
   const [excelFileName, setExcelFileName] = useState('');
   const [excelMsg,      setExcelMsg]      = useState('');
@@ -721,7 +733,12 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
             <input
               placeholder="No Name"
               value={collection.name}
-              onChange={e => set('name', e.target.value)}
+              onChange={e => {
+                const v = e.target.value;
+                if (nameFormatEdited) { set('name', v); return; }
+                onChange({ ...collection, name: v, nameFormat: v.trim() ? `${v.trim()} #{{id}}` : '#{{id}}' });
+                if (errors.name) setErrors(prev => { const n = { ...prev }; delete n.name; return n; });
+              }}
               style={errors.name ? { borderColor: '#ef4444' } : undefined}
             />
             {errors.name && <span className="field-error">{errors.name}</span>}
@@ -765,7 +782,7 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
               <label>Name of each NFT</label>
               <input
                 value={collection.nameFormat}
-                onChange={e => set('nameFormat', e.target.value)}
+                onChange={e => { setNameFormatEdited(true); set('nameFormat', e.target.value); }}
               />
               <span className="field-hint">
                 Preview: {[1, 2, 3].map(i => applyNameFormat(collection.nameFormat, i)).join(', ')}, ...
