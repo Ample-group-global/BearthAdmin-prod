@@ -60,6 +60,12 @@ export default function WavesPage() {
 
   const [activeTab, setActiveTab] = useState<"waves" | "collaborations">("waves");
 
+  // Waves are now per-collection (mirrors NFT List's collection_id split) --
+  // unlike NFT List there's no meaningful "all collections combined" view
+  // here (21 waves from 3 collections can't be shown as one merged table),
+  // so exactly one collection must always be selected.
+  const [collections, setCollections] = useState<Array<{ id: string; name: string }>>([]);
+  const [collectionId, setCollectionId] = useState("");
 
   const [waves, setWaves] = useState<Wave[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,10 +111,11 @@ export default function WavesPage() {
   const [blindBoxUrl, setBlindBoxUrl] = useState<string | null>(null);
 
   const loadWaves = () => {
+    if (!collectionId) return;
     console.group("[WavesPage] loadWaves");
     console.log("fetching /api/nft-sell/waves");
     setLoading(true); setError(null);
-    fetch("/api/nft-sell/waves", { credentials: "include" })
+    fetch(`/api/nft-sell/waves?collection_id=${collectionId}`, { credentials: "include" })
       .then(r => r.json())
       .then(d => {
         console.log("waves loaded:", d.waves?.length ?? 0);
@@ -127,10 +134,11 @@ export default function WavesPage() {
   const [watchUpdated, setWatchUpdated] = useState<Date | null>(null);
 
   const silentWavePoll = useCallback(async () => {
+    if (!collectionId) return;
     try {
       const [res, sr] = await Promise.all([
-        fetch("/api/nft-sell/waves", { credentials: "include" }),
-        fetch("/api/nft-sell/waves/schedule-status", { credentials: "include" }),
+        fetch(`/api/nft-sell/waves?collection_id=${collectionId}`, { credentials: "include" }),
+        fetch(`/api/nft-sell/waves/schedule-status?collection_id=${collectionId}`, { credentials: "include" }),
       ]);
       if (!res.ok) return;
       const d = await res.json();
@@ -154,7 +162,7 @@ export default function WavesPage() {
         setRevealWaves(sd.waves ?? []);
       }
     } catch { /* silent */ }
-  }, []);
+  }, [collectionId]);
 
   useInterval(silentWavePoll, 30_000);
 
@@ -181,30 +189,11 @@ export default function WavesPage() {
     return () => clearTimeout(id);
   }, [revealWaves, waves, silentWavePoll]);
 
-  useEffect(() => {
-    loadWaves();
-    loadRevealData();
-    fetch("/api/nft-sell/lookups/wave-sale-methods", { credentials: "include" })
-      .then(r => r.json())
-      .then(d => setSaleMethods(d.saleMethods ?? []))
-      .catch(() => { });
-    fetch("/api/nft-sell/collection/stats", { credentials: "include" })
-      .then(r => r.json())
-      .then(d => { if (d.blindBoxImageUrl) setBlindBoxUrl(d.blindBoxImageUrl); })
-      .catch(() => { });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (strategyHighlight && highlightRef.current) {
-      highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [strategyHighlight, waves]);
-
   const loadRevealData = useCallback(async () => {
+    if (!collectionId) return;
     setRevealLoading(true); setRevealErr(null);
     try {
-      const wr = await fetch("/api/nft-sell/waves/schedule-status", { credentials: "include" });
+      const wr = await fetch(`/api/nft-sell/waves/schedule-status?collection_id=${collectionId}`, { credentials: "include" });
       const wd = await wr.json();
       setRevealWaves(wd.waves ?? []);
     } catch {
@@ -212,7 +201,40 @@ export default function WavesPage() {
     } finally {
       setRevealLoading(false);
     }
+  }, [collectionId]);
+
+  // Load the collection list once (mirrors NFT List's /api/master fetch —
+  // also resolves the real blind-box artwork the same way, replacing the
+  // old /api/nft-sell/collection/stats call that 404ed silently).
+  useEffect(() => {
+    fetch("/api/master", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => {
+        setCollections(d.collections ?? []);
+        if (d.blindBoxImageUrl) setBlindBoxUrl(d.blindBoxImageUrl);
+        if (!collectionId && d.collections?.length) setCollectionId(d.collections[0].id);
+      })
+      .catch(() => { });
+    fetch("/api/nft-sell/lookups/wave-sale-methods", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => setSaleMethods(d.saleMethods ?? []))
+      .catch(() => { });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Once a collection is selected (default or user-picked), (re)load everything for it.
+  useEffect(() => {
+    if (!collectionId) return;
+    loadWaves();
+    loadRevealData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectionId]);
+
+  useEffect(() => {
+    if (strategyHighlight && highlightRef.current) {
+      highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [strategyHighlight, waves]);
 
   const saveRevealDate = async () => {
     if (!scheduleEditWave) return;
@@ -287,7 +309,7 @@ export default function WavesPage() {
     setChainPrice(w.defaultPriceEth != null ? String(w.defaultPriceEth) : "");
     setPurchaseLimitInput(w.maxPerWallet != null ? String(w.maxPerWallet) : "0");
     setChainLoading(true);
-    fetch(`/api/nft-sell/waves/${w.waveNumber}`, { credentials: "include" })
+    fetch(`/api/nft-sell/waves/${w.waveNumber}?collection_id=${collectionId}`, { credentials: "include" })
       .then(r => r.json())
       .then(d => { console.log("on-chain state:", d.onChain); console.groupEnd(); setChainOnChain(d.onChain ?? null); })
       .catch(() => { console.groupEnd(); })
@@ -310,7 +332,7 @@ export default function WavesPage() {
       if (!res.ok) { setChainError(d.error ?? `${opName} failed.`); return; }
       console.log("chainOp success, txHash:", d.txHash ?? null);
       setChainTx(d.txHash ?? null);
-      const fresh = await fetch(`/api/nft-sell/waves/${chainWave!.waveNumber}`, { credentials: "include" }).then(r => r.json());
+      const fresh = await fetch(`/api/nft-sell/waves/${chainWave!.waveNumber}?collection_id=${collectionId}`, { credentials: "include" }).then(r => r.json());
       setChainOnChain(fresh.onChain ?? null);
       loadWaves();
     } catch (e) {
@@ -331,6 +353,7 @@ export default function WavesPage() {
       body: JSON.stringify({
         startUnix: Math.floor(new Date(editWave.scheduledStart!).getTime() / 1000),
         endUnix: Math.floor(new Date(editWave.scheduledEnd!).getTime() / 1000),
+        collectionId,
       }),
     }));
   };
@@ -340,7 +363,7 @@ export default function WavesPage() {
     chainOp("price", () => fetch(`/api/nft-sell/waves/${chainWave!.waveNumber}/price`, {
       method: "PUT", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ priceEth: chainPrice }),
+      body: JSON.stringify({ priceEth: chainPrice, collectionId }),
     }));
   };
 
@@ -350,7 +373,7 @@ export default function WavesPage() {
     chainOp("purchase-limit", () => fetch(`/api/nft-sell/waves/${chainWave!.waveNumber}/purchase-limit`, {
       method: "PUT", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ maxPerWallet: limit }),
+      body: JSON.stringify({ maxPerWallet: limit, collectionId }),
     }));
   };
 
@@ -417,6 +440,29 @@ export default function WavesPage() {
           Refresh
         </button>
       </div>
+
+      {/* Collection selector — waves are per-collection (each with its own
+          independent 7-wave schedule), unlike NFT List there's no "all
+          combined" view here, so exactly one must always be selected. */}
+      {collections.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl flex-wrap"
+          style={{ background: "#f8fafc", border: "1px solid #e5e7eb" }}>
+          <span className="text-xs font-bold uppercase tracking-wide" style={{ color: "#64748b" }}>Collection</span>
+          <select
+            value={collectionId}
+            onChange={e => setCollectionId(e.target.value)}
+            className="py-1.5 px-3 rounded-lg text-sm font-semibold bg-white outline-none"
+            style={{ border: "1px solid #cbd5e1", color: "#24315f" }}>
+            {collections.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <span className="text-xs" style={{ color: "#94a3b8" }}>
+            Each collection has its own independent wave schedule.
+          </span>
+        </div>
+      )}
+
       <div className="ba-tabs" style={{ borderBottom: "1px solid #e5e7eb" }}>
         <div className="flex gap-0">
           {/* Hidden: "packs" (Mystery Packs — no on-chain mint in reveal flow, design gap pending) */}
@@ -571,6 +617,7 @@ export default function WavesPage() {
       {revealWave && (
         <RevealModal
           wave={revealWave}
+          collectionId={collectionId}
           onClose={() => setRevealWave(null)}
           onSuccess={(txHash) => handleRevealSuccess(txHash, revealWave.wave_number)}
         />
@@ -589,6 +636,7 @@ export default function WavesPage() {
       {treasuryMoveWave && (
         <TreasuryMoveModal
           wave={treasuryMoveWave}
+          collectionId={collectionId}
           onClose={() => setTreasuryMoveWave(null)}
           onSuccess={(txHash) => {
             setTreasuryMoveWave(null);

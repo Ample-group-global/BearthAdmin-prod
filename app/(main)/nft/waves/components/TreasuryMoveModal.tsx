@@ -59,10 +59,12 @@ interface GasEstimate {
 
 export default function TreasuryMoveModal({
   wave,
+  collectionId,
   onClose,
   onSuccess,
 }: {
   wave: Wave;
+  collectionId: string;
   onClose: () => void;
   onSuccess: (txHash: string) => void;
 }) {
@@ -92,7 +94,7 @@ export default function TreasuryMoveModal({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ collectionId }),
         signal: controller.signal,
       });
       const d = await res.json();

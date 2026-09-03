@@ -281,9 +281,15 @@ export default function NftPage() {
       .then(r => r.json())
       .then(d => { setMaster(d); if (d.blindBoxImageUrl) setBlindBoxImageUrl(d.blindBoxImageUrl); })
       .catch(() => { });
-    fetch("/api/nft-sell/waves", { credentials: "include" })
-      .then(r => r.json()).then(d => setWaves(d.waves ?? [])).catch(() => { });
   }, []);
+
+  // Waves are per-collection now — the Wave filter/reveal-panel only make
+  // sense once a specific collection is selected (not "All Collections").
+  useEffect(() => {
+    if (!collectionFilter) { setWaves([]); return; }
+    fetch(`/api/nft-sell/waves?collection_id=${collectionFilter}`, { credentials: "include" })
+      .then(r => r.json()).then(d => setWaves(d.waves ?? [])).catch(() => { });
+  }, [collectionFilter]);
 
   useEffect(() => {
     loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
@@ -342,12 +348,12 @@ export default function NftPage() {
       const res = await fetch(`/api/nft-sell/waves/${waveFilter}/reveal`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uri: revealUri }),
+        body: JSON.stringify({ uri: revealUri, collectionId: collectionFilter }),
       });
       const d = await res.json();
       if (!res.ok) { setRevealMsg(d.error ?? "Reveal failed"); return; }
       setRevealMsg(`Wave ${waveFilter} revealed! Tx: ${String(d.txHash).slice(0, 12)}…`);
-      fetch("/api/nft-sell/waves", { credentials: "include" })
+      fetch(`/api/nft-sell/waves?collection_id=${collectionFilter}`, { credentials: "include" })
         .then(r => r.json()).then(d2 => setWaves(d2.waves ?? [])).catch(() => { });
       loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
     } catch { setRevealMsg("Network error during reveal"); }

@@ -32,10 +32,12 @@ function fmtFull(dt: string | null): string {
 
 export default function WaveRevealModal({
   wave,
+  collectionId,
   onClose,
   onSuccess,
 }: {
   wave: WaveSchedule;
+  collectionId: string;
   onClose: () => void;
   onSuccess: (txHash: string) => void;
 }) {
@@ -58,7 +60,7 @@ export default function WaveRevealModal({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uri }),
+        body: JSON.stringify({ uri, collectionId }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Reveal failed");
