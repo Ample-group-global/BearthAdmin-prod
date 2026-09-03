@@ -278,13 +278,11 @@ export default function NftPage() {
   // ── Initial loads ─────────────────────────────────────────────────────────
   useEffect(() => {
     fetch("/api/master", { credentials: "include" })
-      .then(r => r.json()).then(d => setMaster(d)).catch(() => { });
+      .then(r => r.json())
+      .then(d => { setMaster(d); if (d.blindBoxImageUrl) setBlindBoxImageUrl(d.blindBoxImageUrl); })
+      .catch(() => { });
     fetch("/api/nft-sell/waves", { credentials: "include" })
       .then(r => r.json()).then(d => setWaves(d.waves ?? [])).catch(() => { });
-    fetch("/api/nft-sell/collection/stats", { credentials: "include" })
-      .then(r => r.json())
-      .then(d => { if (d.blindBoxImageUrl) setBlindBoxImageUrl(d.blindBoxImageUrl); })
-      .catch(() => { });
   }, []);
 
   useEffect(() => {
