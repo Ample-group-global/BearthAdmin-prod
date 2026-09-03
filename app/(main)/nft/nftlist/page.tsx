@@ -48,6 +48,8 @@ interface NftRecord {
   createdAt: string;
   updatedAt: string;
   totalCount: number;
+  collectionId: string | null;
+  collectionName: string | null;
   // wave info
   waveId: string | null;
   waveNumber: number | null;
@@ -71,6 +73,7 @@ interface Master {
   nftStages: Array<{ id: string; name: string; code: string }>;
   nftTypes: Array<{ id: string; name: string; code: string }>;
   deliveryStatuses: Array<{ id: string; name: string; code: string }>;
+  collections: Array<{ id: string; name: string }>;
 }
 
 interface WaveOption {
@@ -157,6 +160,7 @@ export default function NftPage() {
   const [waveFilter, setWaveFilter] = useState("");
   const [mintTypeFilter, setMintTypeFilter] = useState("");
   const [rarityTierFilter, setRarityTierFilter] = useState("");
+  const [collectionFilter, setCollectionFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [master, setMaster] = useState<Master | null>(null);
@@ -200,7 +204,7 @@ export default function NftPage() {
   const loadRecords = useCallback((
     q: string, off: number, status: string, stage: string, revealed: string, wave: string,
     sk?: string, sd?: "asc" | "desc",
-    mFrom?: string, mTo?: string, mintType?: string, rarityTier?: string,
+    mFrom?: string, mTo?: string, mintType?: string, rarityTier?: string, collectionId?: string,
   ) => {
     console.group("[NftPage] loadRecords");
     console.log("q:", q, "off:", off, "wave:", wave, "status:", status, "revealed:", revealed);
@@ -208,6 +212,7 @@ export default function NftPage() {
     const params = new URLSearchParams({ search: q, limit: String(PAGE_SIZE), offset: String(off) });
     if (ownerFilterRef.current) params.set("owner_address", ownerFilterRef.current);
     if (stage) params.set("stage", stage);
+    if (collectionId) params.set("collection_id", collectionId);
     if (revealed === "pre_mint") {
       params.set("delivery_status", "pending");
     } else if (revealed === "sold") {
@@ -262,13 +267,13 @@ export default function NftPage() {
       setResetMsg(d.message ?? "Reset complete.");
       setStatusFilter(""); setRevealFilter(""); setWaveFilter(""); setStageFilter("");
       setMintedFrom(""); setMintedTo(""); setMintTypeFilter(""); setRarityTierFilter(""); setOffset(0);
-      loadRecords("", 0, "", "", "", "", undefined, "asc", "", "", "", "");
+      loadRecords("", 0, "", "", "", "", undefined, "asc", "", "", "", "", collectionFilter);
     } catch (e) {
       setResetMsg(e instanceof Error ? e.message : "Reset failed");
     } finally {
       setResetting(false); setShowResetConfirm(false);
     }
-  }, [loadRecords]);
+  }, [loadRecords, collectionFilter]);
 
   // ── Initial loads ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -283,8 +288,8 @@ export default function NftPage() {
   }, []);
 
   useEffect(() => {
-    loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter);
-  }, [offset, statusFilter, stageFilter, revealFilter, waveFilter, mintTypeFilter, rarityTierFilter]);
+    loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
+  }, [offset, statusFilter, stageFilter, revealFilter, waveFilter, mintTypeFilter, rarityTierFilter, collectionFilter]);
 
   // ── Watchdog: silent 30s poll on stats ───────────────────────────────────
   const [recWatchAlert, setRecWatchAlert] = useState<string | null>(null);
@@ -313,18 +318,18 @@ export default function NftPage() {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => {
       setOffset(0);
-      loadRecords(v, 0, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter);
+      loadRecords(v, 0, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
     }, 300);
   };
 
-  const applyFilter = (status = statusFilter, stage = stageFilter, revealed = revealFilter, wave = waveFilter, mFrom = mintedFrom, mTo = mintedTo, mintType = mintTypeFilter, rarityTier = rarityTierFilter) => {
+  const applyFilter = (status = statusFilter, stage = stageFilter, revealed = revealFilter, wave = waveFilter, mFrom = mintedFrom, mTo = mintedTo, mintType = mintTypeFilter, rarityTier = rarityTierFilter, collectionId = collectionFilter) => {
     setOffset(0);
-    loadRecords(search, 0, status, stage, revealed, wave, sortKey, sortDir, mFrom, mTo, mintType, rarityTier);
+    loadRecords(search, 0, status, stage, revealed, wave, sortKey, sortDir, mFrom, mTo, mintType, rarityTier, collectionId);
   };
 
   const handleSort = (key: string, dir: "asc" | "desc") => {
     setSortKey(key); setSortDir(dir); setOffset(0);
-    loadRecords(search, 0, statusFilter, stageFilter, revealFilter, waveFilter, key, dir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter);
+    loadRecords(search, 0, statusFilter, stageFilter, revealFilter, waveFilter, key, dir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
   };
 
   // ── Computed: wave reveal panel ───────────────────────────────────────────
@@ -346,7 +351,7 @@ export default function NftPage() {
       setRevealMsg(`Wave ${waveFilter} revealed! Tx: ${String(d.txHash).slice(0, 12)}…`);
       fetch("/api/nft-sell/waves", { credentials: "include" })
         .then(r => r.json()).then(d2 => setWaves(d2.waves ?? [])).catch(() => { });
-      loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter);
+      loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
     } catch { setRevealMsg("Network error during reveal"); }
     finally { setRevealing(false); }
   };
@@ -365,7 +370,7 @@ export default function NftPage() {
       const d = await res.json();
       if (!res.ok) { setSbtMsg(d.error ?? "SBT update failed"); console.groupEnd(); return; }
       setSbtMsg(`SBT ${enable ? "enabled" : "disabled"} — Tx: ${String(d.txHash).slice(0, 12)}…`);
-      loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter);
+      loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
       setViewRecord(r => r ? { ...r, tokenSbt: enable } : null);
     } catch { setSbtMsg("Network error"); }
     finally { setSbtBusy(false); console.groupEnd(); }
@@ -383,7 +388,7 @@ export default function NftPage() {
         body: JSON.stringify({ enabled: enable }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setSbtMsg(d.error ?? "SBT update failed"); console.groupEnd(); return; }
-      loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter);
+      loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
     } catch { setSbtMsg("Network error"); }
     finally { setSbtRowBusy(null); console.groupEnd(); }
   };
@@ -426,7 +431,7 @@ export default function NftPage() {
       setModalMintMoveMsg(`Done! Tx: ${String(d.txHash).slice(0, 12)}…`);
       setModalMintMoveRecip("");
       setTimeout(() => setViewRecord(null), 1500);
-      loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter);
+      loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
     } catch { setModalMintMoveMsg("Network error"); }
     finally { setModalMintMoveBusy(false); console.groupEnd(); }
   };
@@ -475,6 +480,16 @@ export default function NftPage() {
           </div>
         </div>
       ),
+    },
+    {
+      key: "collection",
+      header: "Collection",
+      render: r => r.collectionName ? (
+        <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+          style={{ background: "rgba(36,49,95,0.08)", color: "#24315f" }}>
+          {r.collectionName}
+        </span>
+      ) : <span style={{ color: "#d1d5db" }}>—</span>,
     },
     {
       key: "wave",
@@ -750,6 +765,31 @@ export default function NftPage() {
         )}
       </div>
 
+      {/* ── Collection scope selector — drives both the stats cards and the table below ── */}
+      {activeTab === "nftlist" && master && master.collections.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl flex-wrap"
+          style={{ background: "#f8fafc", border: "1px solid #e5e7eb" }}>
+          <span className="text-xs font-bold uppercase tracking-wide" style={{ color: "#64748b" }}>Collection</span>
+          <select
+            value={collectionFilter}
+            onChange={e => {
+              const v = e.target.value;
+              setCollectionFilter(v);
+              applyFilter(statusFilter, stageFilter, revealFilter, waveFilter, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, v);
+            }}
+            className="py-1.5 px-3 rounded-lg text-sm font-semibold bg-white outline-none"
+            style={{ border: "1px solid #cbd5e1", color: "#24315f" }}>
+            <option value="">All Collections ({master.collections.length})</option>
+            {master.collections.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <span className="text-xs" style={{ color: "#94a3b8" }}>
+            {collectionFilter ? "Stats and records below are scoped to this collection." : "Showing every synced collection combined."}
+          </span>
+        </div>
+      )}
+
       {/* ── Reset result banner ── */}
       {resetMsg && (
         <div className="flex items-center justify-between px-4 py-2.5 rounded-xl text-sm"
@@ -900,7 +940,7 @@ export default function NftPage() {
                   setOwnerFilter("");
                   ownerFilterRef.current = "";
                   setOffset(0);
-                  loadRecords(search, 0, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter);
+                  loadRecords(search, 0, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
                 }}
                 className="ml-4 text-xs opacity-60 hover:opacity-100 font-bold">✕ Clear</button>
             </div>
@@ -952,7 +992,7 @@ export default function NftPage() {
                   setRarityTierFilter("");
                   applyFilter(statusFilter, stageFilter, newReveal, waveFilter, mintedFrom, mintedTo, mintTypeFilter, "");
                 } else {
-                  applyFilter(statusFilter, stageFilter, newReveal, waveFilter, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter);
+                  applyFilter(statusFilter, stageFilter, newReveal, waveFilter, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
                 }
               }}
               className="py-2 px-3 rounded-xl text-sm bg-white outline-none"

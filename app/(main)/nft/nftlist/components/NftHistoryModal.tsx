@@ -40,6 +40,8 @@ export interface NftRecord {
   createdAt: string;
   updatedAt: string;
   totalCount: number;
+  collectionId: string | null;
+  collectionName: string | null;
   // wave info
   waveId: string | null;
   waveNumber: number | null;
