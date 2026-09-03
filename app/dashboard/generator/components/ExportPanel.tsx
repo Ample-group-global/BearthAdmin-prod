@@ -459,6 +459,47 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   const parResumeCountRef = useRef<Record<number, number>>({});
   const PAR_MAX_AUTO_RESUMES = 100;
 
+  // ── Keep the machine awake while an export is running ────────────────────
+  // Every stall-recovery mechanism above (30s watchdog + auto-resume, both
+  // for single-shot and per-slice parallel export) runs on browser-side
+  // setInterval timers. Chrome throttles those in a backgrounded tab but
+  // still fires them (just slower) — the one thing nothing here can survive
+  // is the OS actually sleeping, which freezes JS execution entirely,
+  // watchdog included. Confirmed as the real recurring cause of Bearth V7's
+  // repeated export stalls (resumed only after manually re-engaging the
+  // tab). The Wake Lock API prevents the screen/machine from sleeping for
+  // as long as an export is active; it's auto-released by the browser
+  // whenever the tab is hidden, so it's re-requested on regaining
+  // visibility too — best-effort only (unsupported browsers/no permission
+  // just fall back to the existing resume logic, same as before).
+  const wakeLockRef = useRef<any>(null);
+  useEffect(() => {
+    const isExporting = svrStatus === 'running' || parStatus === 'running';
+    if (!isExporting) {
+      if (wakeLockRef.current) { wakeLockRef.current.release().catch(() => { }); wakeLockRef.current = null; }
+      return;
+    }
+    let cancelled = false;
+    async function acquire() {
+      try {
+        if ('wakeLock' in navigator) {
+          const lock = await (navigator as any).wakeLock.request('screen');
+          if (cancelled) { lock.release().catch(() => { }); return; }
+          wakeLockRef.current = lock;
+        }
+      } catch { /* unsupported or denied — export still has its own resume logic */ }
+    }
+    acquire();
+    function onVisibility() {
+      if (document.visibilityState === 'visible' && !wakeLockRef.current) acquire();
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [svrStatus, parStatus]);
+
   useEffect(() => {
     if (!dbSaved || !dbJobIdRef.current || cidStatus !== 'idle') return;
     let cancelled = false;
