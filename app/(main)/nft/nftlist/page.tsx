@@ -969,15 +969,11 @@ export default function NftPage() {
               ))}
             </select>
 
-            <select value={stageFilter}
-              onChange={e => { setStageFilter(e.target.value); applyFilter(statusFilter, e.target.value, revealFilter, waveFilter); }}
-              className="py-2 px-3 rounded-xl text-sm bg-white outline-none"
-              style={{ border: "1px solid #e5e7eb", color: stageFilter ? "#111827" : "#9bafc5" }}>
-              <option value="">All Stages</option>
-              {(master?.nftStages ?? []).map(s => (
-                <option key={s.id} value={s.code}>{s.name}</option>
-              ))}
-            </select>
+            {/* "Stage" (nft_stage: genesis/ascension/odyssey/...) removed as a
+                separate filter -- it 1:1 collapses into Wave (waves 1+2 both
+                map to "genesis", every other wave maps to exactly one stage),
+                and every record is "genesis" until wave-assigned anyway,
+                so it added no filtering power Wave doesn't already have. */}
 
             {/* NFT lifecycle status filter */}
             <select value={revealFilter}
