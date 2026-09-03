@@ -59,8 +59,13 @@ export default function SyncStatusPage() {
   const MAX_AUTO_RESUMES = 100;
 
   // ── Fetch collection sync status ──────────────────────────────────────────
-  const fetchStatus = useCallback(async () => {
-    setLoading(true);
+  // silent=true skips the loading flag entirely -- used by the background
+  // poll during an active export (every ~6s), which otherwise flipped the
+  // same loading state as the real initial page load and made the whole
+  // table + summary cards visibly unmount and reappear every cycle for the
+  // full duration of any export.
+  const fetchStatus = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setPageError('');
     try {
       const r = await fetch('/api/nft-gen/collections/sync-status');
@@ -70,7 +75,7 @@ export default function SyncStatusPage() {
     } catch (e: any) {
       setPageError(e.message ?? 'Failed to load status');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, []);
 
@@ -155,7 +160,7 @@ export default function SyncStatusPage() {
           const state = await pr.json();
           patchRow(collectionId, { message: state.phase ?? '' });
           tick++;
-          if (tick % 3 === 0) fetchStatus();
+          if (tick % 3 === 0) fetchStatus({ silent: true });
 
           const newProgress = state.progress ?? 0;
           if (newProgress !== lastProgressRef.current[collectionId]) {
@@ -447,16 +452,17 @@ export default function SyncStatusPage() {
                         {/* Actions */}
                         <Td>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {/* Filebase export is no longer triggered from this
+                                page — this page only shows status. Triggering it
+                                here duplicated the Studio's own Parallel Export
+                                flow with a separate, independently-buggy copy of
+                                the same trigger/poll logic, which caused real
+                                confusion (multiple job IDs, restart loops) on
+                                Bearth Test1. Deep-link to the Studio instead. */}
                             {canFb && (
-                              <ActionBtn
-                                label="Export → Filebase"
-                                color="#3b82f6"
-                                onClick={() => {
-                                  setExportBucket('');
-                                  setNewBucket('');
-                                  setExportModal({ collectionId: col.collectionId, jobId: col.jobId, name: col.collectionName });
-                                }}
-                              />
+                              <Link href="/dashboard/generator" style={{ fontSize: 12, color: '#60a5fa', textDecoration: 'none' }}>
+                                Export in Studio →
+                              </Link>
                             )}
                             {canRec && (
                               <ActionBtn
