@@ -1735,8 +1735,12 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
           into a single always-fast flow. Code kept intact — it's still the
           only path that builds a pre-built ZIP and bundles NFT Records sync
           in one click, both useful to keep for reference/fallback.
-          Re-enabled per explicit request to test this path specifically. ── */}
-      {dbSaved && dbJobIdRef.current && (
+          Was re-enabled per explicit request to test this path specifically;
+          that testing is done, re-hidden 2026-09-03 per explicit request.
+          Bucket selection moved out to its own always-visible section above,
+          since Parallel Export/Fix Pending CIDs need it independently of
+          whether this card is shown. ── */}
+      {false && dbSaved && dbJobIdRef.current && (
         <div className="exp-fb-card exp-svr-card" data-testid="server-export-section">
           <div className="exp-fb-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div>
@@ -1746,51 +1750,11 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
                 large collections, use <strong>Parallel Export</strong> below instead for real wall-clock speedup.
               </div>
             </div>
-            <Link
-              href="/dashboard/generator/sync-status"
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-muted)', textDecoration: 'none', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0, marginTop: 2 }}
-            >
-              {'📋'} All Collections
-            </Link>
           </div>
 
           {svrStatus === 'idle' && (
             <>
               <div className="exp-fb-bucket-row" style={{ flexWrap: 'wrap', gap: 8 }}>
-                {bucketsLoading ? (
-                  <span style={{ fontSize: 13, color: 'var(--muted)' }}>Loading buckets…</span>
-                ) : bucketsError ? (
-                  <>
-                    <span style={{ fontSize: 13, color: '#ef4444' }}>⚠ {bucketsError}</span>
-                    <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: '3px 10px' }} onClick={loadBuckets}>
-                      ↺ Retry
-                    </button>
-                  </>
-                ) : (
-                  <select
-                    className="exp-fb-input"
-                    style={{ minWidth: 200 }}
-                    value={svrBucket}
-                    onChange={e => { setSvrBucket(e.target.value); if (e.target.value !== '__new__') setSvrNewBucket(''); }}
-                  >
-                    {bucketList.length === 0 && <option value="">— no buckets found —</option>}
-                    {bucketList.length > 0 && <option value="">— select bucket —</option>}
-                    {bucketList.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                    <option value="__new__">+ Create new bucket…</option>
-                  </select>
-                )}
-                {svrBucket === '__new__' && (
-                  <input
-                    className="exp-fb-input"
-                    style={{ minWidth: 180 }}
-                    placeholder="New bucket name"
-                    value={svrNewBucket}
-                    onChange={e => setSvrNewBucket(e.target.value)}
-                    autoFocus
-                  />
-                )}
                 <button
                   className="btn btn-primary"
                   onClick={startServerExport}
@@ -1904,13 +1868,65 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
       {/* ── Parallel Export (Fast) ── */}
       {dbSaved && dbJobIdRef.current && (
         <div className="exp-fb-card exp-svr-card" data-testid="parallel-export-section">
-          <div className="exp-fb-header">
-            <div className="exp-fb-title">⚡ Parallel Export (Fast)</div>
-            <div className="exp-fb-sub">
-              Runs {PARALLEL_SLICE_COUNT} slices of the collection concurrently for real wall-clock speedup on large
-              collections. No pre-built ZIP or NFT Records sync here — use those separately once this finishes.
+          <div className="exp-fb-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <div className="exp-fb-title">⚡ Parallel Export (Fast)</div>
+              <div className="exp-fb-sub">
+                Runs {PARALLEL_SLICE_COUNT} slices of the collection concurrently for real wall-clock speedup on large
+                collections. No pre-built ZIP or NFT Records sync here — use those separately once this finishes.
+              </div>
             </div>
+            <Link
+              href="/dashboard/generator/sync-status"
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-muted)', textDecoration: 'none', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0, marginTop: 2 }}
+            >
+              {'📋'} All Collections
+            </Link>
           </div>
+
+          {/* Bucket selector — relocated here since Parallel Export and Fix
+              Pending CIDs both read svrBucket/svrNewBucket and neither had
+              its own selector before; the Server-Side Export card that used
+              to own this UI is now hidden. Pure UI relocation — does not
+              touch startParallelExport/runParallelSliceAttempt. */}
+          {parStatus === 'idle' && (
+            <div className="exp-fb-bucket-row" style={{ flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+              {bucketsLoading ? (
+                <span style={{ fontSize: 13, color: 'var(--muted)' }}>Loading buckets…</span>
+              ) : bucketsError ? (
+                <>
+                  <span style={{ fontSize: 13, color: '#ef4444' }}>⚠ {bucketsError}</span>
+                  <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: '3px 10px' }} onClick={loadBuckets}>
+                    ↺ Retry
+                  </button>
+                </>
+              ) : (
+                <select
+                  className="exp-fb-input"
+                  style={{ minWidth: 200 }}
+                  value={svrBucket}
+                  onChange={e => { setSvrBucket(e.target.value); if (e.target.value !== '__new__') setSvrNewBucket(''); }}
+                >
+                  {bucketList.length === 0 && <option value="">— no buckets found —</option>}
+                  {bucketList.length > 0 && <option value="">— select bucket —</option>}
+                  {bucketList.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                  <option value="__new__">+ Create new bucket…</option>
+                </select>
+              )}
+              {svrBucket === '__new__' && (
+                <input
+                  className="exp-fb-input"
+                  style={{ minWidth: 180 }}
+                  placeholder="New bucket name"
+                  value={svrNewBucket}
+                  onChange={e => setSvrNewBucket(e.target.value)}
+                  autoFocus
+                />
+              )}
+            </div>
+          )}
 
           {parStatus === 'idle' && (
             <button
