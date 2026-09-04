@@ -310,10 +310,10 @@ export default function SyncStatusPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={styles.page}>
+    <div style={styles.page} className="sync-page">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div style={styles.header}>
+      <div style={styles.header} className="sync-header">
         <div style={styles.headerLeft}>
           <Link href="/dashboard/generator" style={styles.backLink}>
             <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
@@ -324,33 +324,37 @@ export default function SyncStatusPage() {
           <span style={{ color: 'var(--border)', margin: '0 4px' }}>›</span>
           <h1 style={styles.pageTitle}>Collection Sync Status</h1>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={styles.headerActions} className="sync-header-actions">
           <button
             onClick={() => { setClearResyncBucket(''); setClearResyncStatus('idle'); setClearResyncMessage(''); setClearResyncModal(true); }}
             style={{ ...styles.refreshBtn, color: '#dc2626', borderColor: 'rgba(220,38,38,0.35)' }}
             title="Emergency recovery: wipes NFT Records and rebuilds it from a bucket's real files"
           >
-            ⚠ Clear &amp; Resync from Filebase
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.598c.75 1.334-.213 2.987-1.743 2.987H3.482c-1.53 0-2.493-1.653-1.743-2.987L8.257 3.1zM11 14a1 1 0 11-2 0 1 1 0 012 0zm-.25-6.75a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" clipRule="evenodd"/>
+            </svg>
+            <span className="sync-btn-label">Clear &amp; Resync from Filebase</span>
           </button>
           <button onClick={fetchStatus} disabled={loading} style={styles.refreshBtn}>
-            <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor" className={loading ? 'spin' : undefined}>
               <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd"/>
             </svg>
-            {loading ? 'Loading…' : 'Refresh'}
+            <span className="sync-btn-label">{loading ? 'Loading…' : 'Refresh'}</span>
           </button>
         </div>
       </div>
 
       {/* ── Summary cards ──────────────────────────────────────────────────── */}
       {!loading && !pageError && collections.length > 0 && (
-        <div style={styles.summaryGrid}>
-          <StatCard label="Total Collections" value={String(collections.length)} accent="var(--text)" />
-          <StatCard label="Filebase Synced"   value={`${totalFbSynced} / ${collections.length}`}  accent="#22c55e" />
-          <StatCard label="Records Synced"    value={`${totalRecSynced} / ${collections.length}`} accent="#3b82f6" />
+        <div style={styles.summaryGrid} className="sync-summary-grid">
+          <StatCard label="Total Collections" value={String(collections.length)} accent="#818cf8" icon="layers" />
+          <StatCard label="Filebase Synced"   value={`${totalFbSynced} / ${collections.length}`}  accent="#22c55e" icon="cloud" />
+          <StatCard label="Records Synced"    value={`${totalRecSynced} / ${collections.length}`} accent="#3b82f6" icon="database" />
           <StatCard
             label="Total NFTs"
             value={collections.reduce((s, c) => s + c.supply, 0).toLocaleString()}
-            accent="var(--text-muted)"
+            accent="#f59e0b"
+            icon="grid"
           />
         </div>
       )}
@@ -361,48 +365,59 @@ export default function SyncStatusPage() {
       )}
 
       {/* ── Loading ────────────────────────────────────────────────────────── */}
-      {loading && <div style={styles.loadingMsg}>Loading collection status…</div>}
+      {loading && (
+        <div style={styles.loadingMsg}>
+          <div style={styles.spinnerLg} className="spin" />
+          Loading collection status…
+        </div>
+      )}
 
       {/* ── Table ──────────────────────────────────────────────────────────── */}
       {!loading && !pageError && (
         <div style={styles.tableCard}>
           {collections.length === 0 ? (
             <div style={styles.emptyMsg}>
-              No collections found. Create one in{' '}
-              <Link href="/dashboard/generator" style={{ color: '#60a5fa' }}>NFT Studio</Link> first.
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.35, marginBottom: 12 }}>
+                <path d="M3 7l2-3h14l2 3M3 7v12a1 1 0 001 1h16a1 1 0 001-1V7M3 7h18M9 11h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No collections yet</div>
+              <div>Create one in{' '}
+                <Link href="/dashboard/generator" style={{ color: '#60a5fa', fontWeight: 600 }}>NFT Studio</Link> to see it here.
+              </div>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={styles.table}>
-                <thead>
-                  <tr style={styles.thead}>
-                    <Th width={52}>#</Th>
-                    <Th>Collection</Th>
-                    <Th width={100}>Supply</Th>
-                    <Th width={260}>Filebase Sync</Th>
-                    <Th width={260}>NFT Records</Th>
-                    <Th width={180}>Actions</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {collections.map((col, ri) => {
-                    const rs  = rowStates[col.collectionId] ?? { filebase: 'idle', records: 'idle', message: '' };
-                    const hasJob        = !!col.jobId;
-                    const fbRunning     = rs.filebase === 'running';
-                    const recRunning    = rs.records  === 'running';
-                    const canFb         = hasJob && !col.filebaseSynced && rs.filebase === 'idle';
-                    const canRec        = hasJob && col.filebaseSynced && !col.recordsSynced && rs.records === 'idle';
-                    const allDone       = col.filebaseSynced && col.recordsSynced && rs.filebase === 'idle' && rs.records === 'idle';
-                    const isLast        = ri === collections.length - 1;
+            <div className="sync-table" role="table">
+              <div className="sync-thead" role="rowgroup">
+                <div className="sync-row sync-row-head" role="row">
+                  <div className="sync-cell sync-cell-head" role="columnheader">#</div>
+                  <div className="sync-cell sync-cell-head" role="columnheader">Collection</div>
+                  <div className="sync-cell sync-cell-head" role="columnheader">Supply</div>
+                  <div className="sync-cell sync-cell-head" role="columnheader">Filebase Sync</div>
+                  <div className="sync-cell sync-cell-head" role="columnheader">NFT Records</div>
+                  <div className="sync-cell sync-cell-head" role="columnheader">Actions</div>
+                </div>
+              </div>
+              <div role="rowgroup">
+                {collections.map((col) => {
+                  const rs  = rowStates[col.collectionId] ?? { filebase: 'idle', records: 'idle', message: '' };
+                  const hasJob        = !!col.jobId;
+                  const fbRunning     = rs.filebase === 'running';
+                  const recRunning    = rs.records  === 'running';
+                  const canFb         = hasJob && !col.filebaseSynced && rs.filebase === 'idle';
+                  const canRec        = hasJob && col.filebaseSynced && !col.recordsSynced && rs.records === 'idle';
+                  const allDone       = col.filebaseSynced && col.recordsSynced && rs.filebase === 'idle' && rs.records === 'idle';
 
-                    return (
-                      <tr key={col.collectionId} style={{ borderBottom: isLast ? 'none' : '1px solid var(--border)' }}>
+                  return (
+                    <div key={col.collectionId} className="sync-row" role="row">
 
-                        {/* Sr. No */}
-                        <Td center muted fw={600}>{col.srNo}</Td>
+                      {/* Sr. No */}
+                      <div className="sync-cell" role="cell" data-label="#">
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{col.srNo}</span>
+                      </div>
 
-                        {/* Collection name + job info */}
-                        <Td>
+                      {/* Collection name + job info */}
+                      <div className="sync-cell" role="cell" data-label="Collection">
+                        <div>
                           <div style={{ fontWeight: 700, fontSize: 15 }}>{col.collectionName}</div>
                           <div style={styles.subText}>
                             {hasJob
@@ -414,81 +429,83 @@ export default function SyncStatusPage() {
                               Created {new Date(col.createdAt).toLocaleDateString()}
                             </div>
                           )}
-                        </Td>
+                        </div>
+                      </div>
 
-                        {/* Supply */}
-                        <Td fw={700} fontSize={16}>{col.supply.toLocaleString()}</Td>
+                      {/* Supply */}
+                      <div className="sync-cell" role="cell" data-label="Supply">
+                        <span style={{ fontWeight: 700, fontSize: 16 }}>{col.supply.toLocaleString()}</span>
+                      </div>
 
-                        {/* Filebase sync */}
-                        <Td>
-                          {fbRunning ? (
-                            <RunningCell msg={rs.message || 'Exporting to Filebase…'} color="#60a5fa" />
-                          ) : rs.filebase === 'error' ? (
-                            <ErrorCell msg={rs.message} />
-                          ) : rs.filebase === 'done' ? (
-                            <DoneCell msg={rs.message} />
-                          ) : (
-                            <SyncBadge synced={col.filebaseSynced} count={col.filebaseCount} total={col.supply} />
+                      {/* Filebase sync */}
+                      <div className="sync-cell" role="cell" data-label="Filebase Sync">
+                        {fbRunning ? (
+                          <RunningCell msg={rs.message || 'Exporting to Filebase…'} color="#60a5fa" />
+                        ) : rs.filebase === 'error' ? (
+                          <ErrorCell msg={rs.message} />
+                        ) : rs.filebase === 'done' ? (
+                          <DoneCell msg={rs.message} />
+                        ) : (
+                          <SyncBadge synced={col.filebaseSynced} count={col.filebaseCount} total={col.supply} />
+                        )}
+                      </div>
+
+                      {/* NFT Records */}
+                      <div className="sync-cell" role="cell" data-label="NFT Records">
+                        {!hasJob ? (
+                          <div style={styles.dimText}>Generate first</div>
+                        ) : !col.filebaseSynced && rs.filebase === 'idle' ? (
+                          <div style={styles.dimText}>Filebase sync required</div>
+                        ) : recRunning ? (
+                          <RunningCell msg={rs.message || 'Syncing records…'} color="#a78bfa" />
+                        ) : rs.records === 'error' ? (
+                          <ErrorCell msg={rs.message} />
+                        ) : rs.records === 'done' ? (
+                          <DoneCell msg={rs.message} />
+                        ) : (
+                          <SyncBadge synced={col.recordsSynced} count={col.recordsCount} total={col.supply} />
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="sync-cell" role="cell" data-label="Actions">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                          {/* Filebase export is no longer triggered from this
+                              page — this page only shows status. Triggering it
+                              here duplicated the Studio's own Parallel Export
+                              flow with a separate, independently-buggy copy of
+                              the same trigger/poll logic, which caused real
+                              confusion (multiple job IDs, restart loops) on
+                              Bearth Test1. Deep-link to the Studio instead. */}
+                          {canFb && (
+                            <Link href="/dashboard/generator" style={{ fontSize: 12, color: '#60a5fa', textDecoration: 'none', fontWeight: 600 }}>
+                              Export in Studio →
+                            </Link>
                           )}
-                        </Td>
-
-                        {/* NFT Records */}
-                        <Td>
-                          {!hasJob ? (
-                            <div style={styles.dimText}>Generate first</div>
-                          ) : !col.filebaseSynced && rs.filebase === 'idle' ? (
-                            <div style={styles.dimText}>Filebase sync required</div>
-                          ) : recRunning ? (
-                            <RunningCell msg={rs.message || 'Syncing records…'} color="#a78bfa" />
-                          ) : rs.records === 'error' ? (
-                            <ErrorCell msg={rs.message} />
-                          ) : rs.records === 'done' ? (
-                            <DoneCell msg={rs.message} />
-                          ) : (
-                            <SyncBadge synced={col.recordsSynced} count={col.recordsCount} total={col.supply} />
+                          {canRec && (
+                            <ActionBtn
+                              label="Sync → Records"
+                              color="#8b5cf6"
+                              onClick={() => setRecordsModal({ collectionId: col.collectionId, jobId: col.jobId, name: col.collectionName, count: col.filebaseCount })}
+                            />
                           )}
-                        </Td>
-
-                        {/* Actions */}
-                        <Td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {/* Filebase export is no longer triggered from this
-                                page — this page only shows status. Triggering it
-                                here duplicated the Studio's own Parallel Export
-                                flow with a separate, independently-buggy copy of
-                                the same trigger/poll logic, which caused real
-                                confusion (multiple job IDs, restart loops) on
-                                Bearth Test1. Deep-link to the Studio instead. */}
-                            {canFb && (
-                              <Link href="/dashboard/generator" style={{ fontSize: 12, color: '#60a5fa', textDecoration: 'none' }}>
-                                Export in Studio →
-                              </Link>
-                            )}
-                            {canRec && (
-                              <ActionBtn
-                                label="Sync → Records"
-                                color="#8b5cf6"
-                                onClick={() => setRecordsModal({ collectionId: col.collectionId, jobId: col.jobId, name: col.collectionName, count: col.filebaseCount })}
-                              />
-                            )}
-                            {(fbRunning || recRunning) && (
-                              <span style={{ color: '#60a5fa', fontSize: 12 }}>Working…</span>
-                            )}
-                            {allDone && (
-                              <span style={{ color: '#22c55e', fontSize: 12, fontWeight: 700 }}>✓ All synced</span>
-                            )}
-                            {!hasJob && (
-                              <Link href="/dashboard/generator" style={{ fontSize: 12, color: '#60a5fa', textDecoration: 'none' }}>
-                                Go to Studio →
-                              </Link>
-                            )}
-                          </div>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          {(fbRunning || recRunning) && (
+                            <span style={{ color: '#60a5fa', fontSize: 12, fontWeight: 600 }}>Working…</span>
+                          )}
+                          {allDone && (
+                            <span style={{ color: '#22c55e', fontSize: 12, fontWeight: 700 }}>✓ All synced</span>
+                          )}
+                          {!hasJob && (
+                            <Link href="/dashboard/generator" style={{ fontSize: 12, color: '#60a5fa', textDecoration: 'none', fontWeight: 600 }}>
+                              Go to Studio →
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -629,6 +646,45 @@ export default function SyncStatusPage() {
           0%   { transform: translateX(-100%); }
           100% { transform: translateX(400%); }
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spin { animation: spin 0.9s linear infinite; }
+
+        .sync-stat-card { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+        .sync-stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.12); }
+
+        .sync-table { display: grid; grid-template-columns: 48px minmax(200px,2fr) 90px minmax(180px,1fr) minmax(180px,1fr) 160px; width: 100%; }
+        .sync-thead { display: contents; }
+        .sync-row { display: contents; }
+        .sync-row:not(.sync-row-head):hover .sync-cell { background: var(--hover); }
+        .sync-cell { padding: 15px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; min-width: 0; transition: background 0.12s ease; }
+        .sync-cell-head { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); background: var(--hover); border-bottom: 2px solid var(--border); white-space: nowrap; }
+
+        @media (max-width: 300px) {
+          .sync-btn-label { display: none; }
+        }
+
+        @media (max-width: 860px) {
+          .sync-page { padding: 16px !important; }
+          .sync-header { flex-direction: column; align-items: flex-start !important; gap: 14px; }
+          .sync-header-actions { width: 100%; }
+          .sync-header-actions button { flex: 1; justify-content: center; }
+          .sync-summary-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+          .sync-table { display: block; }
+          .sync-thead { display: none; }
+          .sync-row { display: block; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+          .sync-row:hover { background: var(--hover); }
+          .sync-cell { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 7px 0; border: none; background: none !important; }
+          .sync-cell[data-label]::before {
+            content: attr(data-label); font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.05em; color: var(--text-muted); flex: 0 0 auto; padding-top: 2px;
+          }
+          .sync-cell[data-label="#"] { display: none; }
+        }
+
+        @media (max-width: 480px) {
+          .sync-summary-grid { grid-template-columns: 1fr !important; }
+        }
       `}</style>
     </div>
   );
@@ -636,11 +692,25 @@ export default function SyncStatusPage() {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, accent }: any) {
+const STAT_ICON_PATHS: Record<string, string> = {
+  layers:   'M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
+  cloud:    'M7 18a4 4 0 01-.5-7.97A5.5 5.5 0 0117.5 9.5 4 4 0 0117 18H7z',
+  database: 'M12 3c-4.4 0-8 1.3-8 3s3.6 3 8 3 8-1.3 8-3-3.6-3-8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6',
+  grid:     'M4 4h6v6H4V4zM14 4h6v6h-6V4zM4 14h6v6H4v-6zM14 14h6v6h-6v-6z',
+};
+
+function StatCard({ label, value, accent, icon }: any) {
   return (
-    <div style={styles.statCard}>
-      <div style={styles.statLabel}>{label}</div>
-      <div style={{ ...styles.statValue, color: accent }}>{value}</div>
+    <div style={styles.statCard} className="sync-stat-card">
+      <div style={{ ...styles.statIconWrap, background: `${accent}1a`, color: accent }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <path d={STAT_ICON_PATHS[icon] ?? STAT_ICON_PATHS.grid} />
+        </svg>
+      </div>
+      <div>
+        <div style={styles.statLabel}>{label}</div>
+        <div style={{ ...styles.statValue, color: accent }}>{value}</div>
+      </div>
     </div>
   );
 }
@@ -758,26 +828,29 @@ function ModalTitle({ children }: any) {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles: Record<string, any> = {
-  page:       { padding: '24px 32px', maxWidth: 1280, margin: '0 auto', minHeight: '100vh' },
-  header:     { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 },
-  headerLeft: { display: 'flex', alignItems: 'center', gap: 10 },
+  page:       { padding: '24px 32px', maxWidth: 1280, margin: '0 auto', minHeight: '100vh', boxSizing: 'border-box' },
+  header:     { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 14 },
+  headerLeft: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  headerActions: { display: 'flex', gap: 10, flexWrap: 'wrap' },
   pageTitle:  { margin: 0, fontSize: 22, fontWeight: 800 },
   backLink:   { display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-muted)', textDecoration: 'none', fontSize: 14, fontWeight: 500 },
   refreshBtn: {
     display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px',
     background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8,
-    cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--text)',
+    cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap',
   },
-  summaryGrid:  { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 },
-  statCard:     { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px' },
-  statLabel:    { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 6 },
-  statValue:    { fontSize: 24, fontWeight: 800 },
+  summaryGrid:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 24 },
+  statCard:     { display: 'flex', alignItems: 'center', gap: 14, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' },
+  statIconWrap: { width: 38, height: 38, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  statLabel:    { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 4 },
+  statValue:    { fontSize: 22, fontWeight: 800 },
   errorBanner:  { padding: '14px 18px', background: '#1e1e1e', border: '1px solid #ef4444', borderRadius: 9, color: '#ef4444', marginBottom: 20, fontSize: 14 },
-  loadingMsg:   { textAlign: 'center', padding: 64, color: 'var(--text-muted)', fontSize: 15 },
+  loadingMsg:   { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center', padding: 64, color: 'var(--text-muted)', fontSize: 15 },
+  spinnerLg:    { width: 28, height: 28, borderRadius: '50%', border: '3px solid var(--border)', borderTopColor: '#60a5fa' },
   tableCard:    { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' },
   table:        { width: '100%', borderCollapse: 'collapse', fontSize: 14 },
   thead:        { background: 'var(--hover)', borderBottom: '2px solid var(--border)' },
-  emptyMsg:     { padding: '48px 24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 15 },
+  emptyMsg:     { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '56px 24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 },
   subText:      { fontSize: 11, color: 'var(--text-muted)', marginTop: 2 },
   dimText:      { color: 'var(--text-muted)', fontSize: 13 },
   progressTrack: { marginTop: 5, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', width: 130 },
