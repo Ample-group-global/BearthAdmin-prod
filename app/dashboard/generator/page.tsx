@@ -297,6 +297,15 @@ export default function Page() {
             supply:     collection.supply,
             nameFormat: collection.nameFormat,
             formatType: collection.format,
+            // Rules parsed from an Excel upload live only in `conflicts`
+            // local state until a collection exists to save them against
+            // (saveConflicts can't PUT with no collectionId yet). Sending
+            // them here too, atomically with everything else this same
+            // request already saves, means a brand-new collection's rules
+            // no longer depend on a separate conditional flush succeeding
+            // afterward -- see the flush below, kept as a belt-and-braces
+            // resave for the pre-existing-collection edit path.
+            conflictRules: conflicts.length > 0 ? conflicts : undefined,
           }),
         });
         const data = await r.json();
@@ -340,6 +349,11 @@ export default function Page() {
             supply:       collection.supply,
             nameFormat:   collection.nameFormat,
             formatType:   collection.format,
+            // Same atomic-save reasoning as the create branch above --
+            // whatever rules are currently in local state travel with this
+            // save too, instead of depending solely on the separate flush
+            // below.
+            conflictRules: conflicts.length > 0 ? conflicts : undefined,
           }),
         });
         await fetch('/api/session/collection', {
