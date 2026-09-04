@@ -55,11 +55,6 @@ export default function WavesPage() {
   const searchParams = useSearchParams();
   const strategyHighlight = searchParams.get("saleMethod");
   const strategyName = searchParams.get("strategy");
-  // Deep-link from the Dashboard's per-collection cards (?collectionId=...)
-  // -- only honored if it actually matches a real, loaded collection, so a
-  // stale/bad id in the URL just falls back to the normal default instead
-  // of silently selecting nothing.
-  const requestedCollectionId = searchParams.get("collectionId");
   const highlightRef = useRef<HTMLDivElement>(null);
 
 
@@ -216,18 +211,31 @@ export default function WavesPage() {
   // collections left collectionsLoading/loading stuck true forever with no
   // empty-state message -- see the render below, which now shows one.
   useEffect(() => {
-    fetch("/api/master", { credentials: "include" })
+    // Deep-link from the Dashboard's per-collection cards -- handed off via a
+    // short-lived cookie (not a ?collectionId=<uuid> query param, so the raw
+    // id never shows up in the address bar). One-shot: consumed then cleared
+    // immediately so it doesn't keep overriding manual selection later.
+    fetch("/api/session/waves-collection", { credentials: "include" })
       .then(r => r.json())
       .then(d => {
-        setCollections(d.collections ?? []);
-        if (d.blindBoxImageUrl) setBlindBoxUrl(d.blindBoxImageUrl);
-        if (!collectionId && d.collections?.length) {
-          const requested = requestedCollectionId && d.collections.find((c: { id: string }) => c.id === requestedCollectionId);
-          setCollectionId(requested ? requested.id : d.collections[0].id);
-        }
-        if (!d.collections?.length) setLoading(false);
+        if (d.collectionId) fetch("/api/session/waves-collection", { method: "DELETE", credentials: "include" }).catch(() => {});
+        return d.collectionId as string | null;
       })
-      .catch(() => setLoading(false));
+      .catch(() => null)
+      .then(requestedCollectionId => {
+        fetch("/api/master", { credentials: "include" })
+          .then(r => r.json())
+          .then(d => {
+            setCollections(d.collections ?? []);
+            if (d.blindBoxImageUrl) setBlindBoxUrl(d.blindBoxImageUrl);
+            if (!collectionId && d.collections?.length) {
+              const requested = requestedCollectionId && d.collections.find((c: { id: string }) => c.id === requestedCollectionId);
+              setCollectionId(requested ? requested.id : d.collections[0].id);
+            }
+            if (!d.collections?.length) setLoading(false);
+          })
+          .catch(() => setLoading(false));
+      });
     fetch("/api/nft-sell/lookups/wave-sale-methods", { credentials: "include" })
       .then(r => r.json())
       .then(d => setSaleMethods(d.saleMethods ?? []))

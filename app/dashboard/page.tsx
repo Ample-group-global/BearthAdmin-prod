@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface MenuItem {
   label: string;
@@ -61,9 +62,27 @@ function StatTile({ label, value, accent }: { label: string; value: string; acce
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [cards, setCards] = useState<MenuItem[] | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsError, setStatsError] = useState(false);
+
+  // Hands the collection id to Waves via a short-lived server-side cookie
+  // instead of a ?collectionId=<uuid> query param, so the raw id never shows
+  // up in the address bar (mirrors the existing /api/session/collection
+  // pattern the Studio flow already uses, kept as a separate cookie so this
+  // never collides with whatever collection is active in Studio).
+  const goToWaves = async (collectionId: string) => {
+    try {
+      await fetch('/api/session/waves-collection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionId }),
+      });
+    } finally {
+      router.push('/nft/waves');
+    }
+  };
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -155,7 +174,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="flex gap-4 mt-4 pt-3" style={{ borderTop: "1px solid #f1f5f9" }}>
-                  <Link href={`/nft/waves?collectionId=${c.id}`} className="text-xs font-semibold" style={{ color: "#41afeb" }}>Manage Waves →</Link>
+                  <button onClick={() => goToWaves(c.id)} className="text-xs font-semibold cursor-pointer" style={{ color: "#41afeb" }}>Manage Waves →</button>
                   <Link href="/nft/nftlist" className="text-xs font-semibold" style={{ color: "#41afeb" }}>View NFTs →</Link>
                 </div>
               </div>
