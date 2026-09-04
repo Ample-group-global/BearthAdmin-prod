@@ -203,17 +203,27 @@ export default function WavesPage() {
     }
   }, [collectionId]);
 
-  // Load the collection list once (mirrors NFT List's /api/master fetch —
-  // also resolves the real blind-box artwork the same way, replacing the
-  // old /api/nft-sell/collection/stats call that 404ed silently).
+  // Collection dropdown: /api/master's list is scoped to collections that
+  // already have synced nft_records (it's built for NFT List's filter,
+  // where that's the right rule) -- a brand-new collection with waves
+  // configured but nothing generated/synced yet would never appear here,
+  // leaving collectionId permanently unset and this page's `loading` flag
+  // stuck true forever (its own load only runs once collectionId exists —
+  // see the effect below). Waves needs to manage a collection BEFORE it has
+  // any records, so it must list every real collection unconditionally via
+  // /api/nft-gen/collections instead. /api/master is still used, separately,
+  // only for the blind-box artwork URL it also happens to resolve.
   useEffect(() => {
-    fetch("/api/master", { credentials: "include" })
+    fetch("/api/nft-gen/collections", { credentials: "include" })
       .then(r => r.json())
       .then(d => {
         setCollections(d.collections ?? []);
-        if (d.blindBoxImageUrl) setBlindBoxUrl(d.blindBoxImageUrl);
         if (!collectionId && d.collections?.length) setCollectionId(d.collections[0].id);
       })
+      .catch(() => { });
+    fetch("/api/master", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => { if (d.blindBoxImageUrl) setBlindBoxUrl(d.blindBoxImageUrl); })
       .catch(() => { });
     fetch("/api/nft-sell/lookups/wave-sale-methods", { credentials: "include" })
       .then(r => r.json())
