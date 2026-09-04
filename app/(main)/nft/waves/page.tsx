@@ -203,28 +203,23 @@ export default function WavesPage() {
     }
   }, [collectionId]);
 
-  // Collection dropdown: /api/master's list is scoped to collections that
-  // already have synced nft_records (it's built for NFT List's filter,
-  // where that's the right rule) -- a brand-new collection with waves
-  // configured but nothing generated/synced yet would never appear here,
-  // leaving collectionId permanently unset and this page's `loading` flag
-  // stuck true forever (its own load only runs once collectionId exists —
-  // see the effect below). Waves needs to manage a collection BEFORE it has
-  // any records, so it must list every real collection unconditionally via
-  // /api/nft-gen/collections instead. /api/master is still used, separately,
-  // only for the blind-box artwork URL it also happens to resolve.
+  // Collection dropdown: /api/master's list is deliberately scoped to
+  // collections that already have synced nft_records -- correct here too,
+  // not just for NFT List: a collection with nothing generated/synced yet
+  // has no real NFTs to schedule a sale for, so it should NOT show up in
+  // Waves either. The actual bug was that this fetch resolving to zero
+  // collections left collectionsLoading/loading stuck true forever with no
+  // empty-state message -- see the render below, which now shows one.
   useEffect(() => {
-    fetch("/api/nft-gen/collections", { credentials: "include" })
+    fetch("/api/master", { credentials: "include" })
       .then(r => r.json())
       .then(d => {
         setCollections(d.collections ?? []);
+        if (d.blindBoxImageUrl) setBlindBoxUrl(d.blindBoxImageUrl);
         if (!collectionId && d.collections?.length) setCollectionId(d.collections[0].id);
+        if (!d.collections?.length) setLoading(false);
       })
-      .catch(() => { });
-    fetch("/api/master", { credentials: "include" })
-      .then(r => r.json())
-      .then(d => { if (d.blindBoxImageUrl) setBlindBoxUrl(d.blindBoxImageUrl); })
-      .catch(() => { });
+      .catch(() => setLoading(false));
     fetch("/api/nft-sell/lookups/wave-sale-methods", { credentials: "include" })
       .then(r => r.json())
       .then(d => setSaleMethods(d.saleMethods ?? []))
@@ -451,6 +446,28 @@ export default function WavesPage() {
         </button>
       </div>
 
+      {/* Collections only qualify here once they have synced nft_records
+          (same rule /api/master already applies for NFT List, correct here
+          too — a collection with nothing generated/synced yet has no real
+          NFTs to schedule a sale for). Previously this state was a
+          perpetual "Loading..." spinner with no explanation once the
+          collections fetch resolved to zero results — !loading here means
+          the fetch actually completed, it just found nothing yet. */}
+      {!loading && collections.length === 0 && (
+        <div className="flex flex-col items-center gap-2 px-6 py-14 rounded-xl text-center"
+          style={{ background: "#f8fafc", border: "1px solid #e5e7eb" }}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.35 }}>
+            <path d="M3 7l2-3h14l2 3M3 7v12a1 1 0 001 1h16a1 1 0 001-1V7M3 7h18M9 11h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <p className="text-sm font-bold" style={{ color: "#24315f" }}>No collections with generated NFTs yet</p>
+          <p className="text-xs max-w-md" style={{ color: "#94a3b8" }}>
+            Waves only appear here once a collection&apos;s NFTs have been generated and synced to records in{" "}
+            <a href="/dashboard/generator" style={{ color: "#41afeb", fontWeight: 600 }}>NFT Studio</a> —
+            there&apos;s nothing to schedule a sale for until then.
+          </p>
+        </div>
+      )}
+
       {/* Collection selector — waves are per-collection (each with its own
           independent 7-wave schedule), unlike NFT List there's no "all
           combined" view here, so exactly one must always be selected. */}
@@ -506,7 +523,7 @@ export default function WavesPage() {
         </div>
       )}
 
-      {activeTab === "waves" && (
+      {activeTab === "waves" && collections.length > 0 && (
         <>
           {/* Strategy banner */}
           {strategyHighlight && (
