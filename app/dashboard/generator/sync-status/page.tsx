@@ -401,7 +401,7 @@ export default function SyncStatusPage() {
                   <div className="sync-cell sync-cell-head" role="columnheader">Actions</div>
                 </div>
               </div>
-              <div role="rowgroup">
+              <div className="sync-tbody" role="rowgroup">
                 {collections.map((col) => {
                   const rs  = rowStates[col.collectionId] ?? { filebase: 'idle', records: 'idle', message: '' };
                   const hasJob        = !!col.jobId;
@@ -674,6 +674,7 @@ export default function SyncStatusPage() {
 
         .sync-table { display: grid; grid-template-columns: 48px minmax(200px,2fr) 90px minmax(180px,1fr) minmax(180px,1fr) 160px; width: 100%; }
         .sync-thead { display: contents; }
+        .sync-tbody { display: contents; }
         .sync-row { display: contents; }
         .sync-row:not(.sync-row-head):hover .sync-cell { background: var(--hover); }
         .sync-cell { padding: 15px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; min-width: 0; transition: background 0.12s ease; }
