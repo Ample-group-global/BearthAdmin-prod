@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import NftPopup from './NftPopup';
+import DeployContractPanel from './DeployContractPanel';
 import { TIER_META, Spinner, CheckIcon, RarityCard, ProgressBar, HLayerFilter } from './ExportGridParts';
 import { fetchWithTimeout } from '../../../../lib/fetchWithTimeout';
 
@@ -1765,6 +1766,15 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Deploy a dedicated smart contract for this collection — only
+          shown once export/sync has actually finished, same gate as the
+          download card above (nothing meaningful to deploy against before
+          that). New collections only; existing ones keep the shared
+          contract and this card is a no-op for them. ── */}
+      {dbSaved && dbJobIdRef.current && (svrStatus === 'done' || exportDone) && (
+        <DeployContractPanel collectionId={collectionId} />
       )}
 
       {/* ── Server-Side Export (single-threaded) — hidden, not removed. Its
