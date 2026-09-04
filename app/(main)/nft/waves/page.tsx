@@ -55,6 +55,11 @@ export default function WavesPage() {
   const searchParams = useSearchParams();
   const strategyHighlight = searchParams.get("saleMethod");
   const strategyName = searchParams.get("strategy");
+  // Deep-link from the Dashboard's per-collection cards (?collectionId=...)
+  // -- only honored if it actually matches a real, loaded collection, so a
+  // stale/bad id in the URL just falls back to the normal default instead
+  // of silently selecting nothing.
+  const requestedCollectionId = searchParams.get("collectionId");
   const highlightRef = useRef<HTMLDivElement>(null);
 
 
@@ -216,7 +221,10 @@ export default function WavesPage() {
       .then(d => {
         setCollections(d.collections ?? []);
         if (d.blindBoxImageUrl) setBlindBoxUrl(d.blindBoxImageUrl);
-        if (!collectionId && d.collections?.length) setCollectionId(d.collections[0].id);
+        if (!collectionId && d.collections?.length) {
+          const requested = requestedCollectionId && d.collections.find((c: { id: string }) => c.id === requestedCollectionId);
+          setCollectionId(requested ? requested.id : d.collections[0].id);
+        }
         if (!d.collections?.length) setLoading(false);
       })
       .catch(() => setLoading(false));
