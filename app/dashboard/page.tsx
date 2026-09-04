@@ -115,7 +115,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatTile label="Collections"   value={String(stats.totals.collections)} accent="#24315f" />
           <StatTile label="Total Supply"  value={stats.totals.supply.toLocaleString()} accent="#7c3aed" />
-          <StatTile label="Minted"        value={stats.totals.minted.toLocaleString()} accent="#41afeb" />
+          <StatTile label="Generated"     value={stats.totals.minted.toLocaleString()} accent="#41afeb" />
           <StatTile label="Sold"          value={stats.totals.sold.toLocaleString()} accent="#16a34a" />
           <StatTile label="ETH Raised"    value={fmtEth(stats.totals.ethRaised)} accent="#ea580c" />
           <StatTile label="Active Waves"  value={String(stats.totals.activeWaves)} accent="#dc2626" />
@@ -160,7 +160,7 @@ export default function DashboardPage() {
 
                 <div className="grid grid-cols-3 gap-2 mt-4">
                   <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Minted</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Generated</div>
                     <div className="text-sm font-bold" style={{ color: "#24315f" }}>{c.mintedCount.toLocaleString()} / {c.supply.toLocaleString()}</div>
                   </div>
                   <div>
