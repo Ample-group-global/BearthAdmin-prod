@@ -13,6 +13,7 @@ interface CollectionRow {
   createdAt:      string;
   jobId:          string | null;
   jobStatus:      string | null;
+  exportBucket:   string | null;
   filebaseCount:  number;
   filebaseTotal:  number;
   recordsCount:   number;
@@ -49,6 +50,17 @@ export default function SyncStatusPage() {
   // Click-a-collection's-Supply modal — reads Filebase directly, has no
   // relation to the DB-backed NFT List page (kept as a separate component).
   const [browseCollection, setBrowseCollection] = useState<{ name: string; supply: number } | null>(null);
+  // Per-collection direct-to-folder download -- moved here from the Studio's
+  // Export tab so every collection's download lives in one place instead of
+  // only being reachable while that specific collection happens to be loaded
+  // in Studio. Read-only (lists + fetches via presigned URLs), so unlike the
+  // Filebase-export trigger above, duplicating this logic doesn't carry the
+  // same job-state/restart-loop risk that kept export-triggering out of this
+  // page.
+  const [downloadState, setDownloadState] = useState<Record<string, {
+    status: 'idle' | 'running' | 'done' | 'error';
+    done: number; total: number; failed: number; folderName: string; error: string;
+  }>>({});
   const [exportBucket,   setExportBucket]   = useState('');
   const [newBucket,      setNewBucket]      = useState('');
   const [bucketList,     setBucketList]     = useState<string[]>([]);
@@ -61,6 +73,103 @@ export default function SyncStatusPage() {
   const lastProgressTimeRef = useRef<Record<string, number>>({});
   const resumeCountRef = useRef<Record<string, number>>({});
   const MAX_AUTO_RESUMES = 100;
+  const DOWNLOAD_URL_BATCH = 500;
+  const DOWNLOAD_CONCURRENCY = 40;
+
+  // ── Download a collection's NFTs + metadata straight to a local folder ────
+  // Ported from ExportPanel.tsx's downloadAllFilesDirect -- same presigned-URL
+  // batching, same skip-if-already-saved resumability (matches by filename +
+  // size, so re-running only fetches what's missing). Only needs a bucket
+  // name, so it works for any synced collection regardless of whether it's
+  // currently loaded in Studio.
+  async function downloadCollection(col: CollectionRow) {
+    const bucket = col.exportBucket;
+    if (!bucket) return;
+
+    if (!('showDirectoryPicker' in window)) {
+      setDownloadState(prev => ({ ...prev, [col.collectionId]: {
+        status: 'error', done: 0, total: 0, failed: 0, folderName: '',
+        error: 'This browser cannot save directly to a folder — use Chrome or Edge.',
+      } }));
+      return;
+    }
+
+    let dirHandle: any;
+    try {
+      dirHandle = await (window as any).showDirectoryPicker();
+    } catch {
+      return; // user cancelled the folder picker — not an error
+    }
+
+    setDownloadState(prev => ({ ...prev, [col.collectionId]: {
+      status: 'running', done: 0, total: 0, failed: 0, folderName: dirHandle.name ?? '', error: '',
+    } }));
+
+    try {
+      const imagesDir = await dirHandle.getDirectoryHandle('images', { create: true });
+      const metadataDir = await dirHandle.getDirectoryHandle('metadata', { create: true });
+
+      const listRes = await fetch(`/api/filebase/objects?bucket=${encodeURIComponent(bucket)}`);
+      if (!listRes.ok) throw new Error(`Failed to list bucket objects (${listRes.status})`);
+      const { objects } = await listRes.json();
+      const relevant: Array<{ key: string; size: number }> = (objects ?? [])
+        .filter((o: any) => o.key && (o.key.startsWith('images/') || o.key.startsWith('metadata/')))
+        .map((o: any) => ({ key: o.key, size: o.size ?? 0 }));
+
+      setDownloadState(prev => ({ ...prev, [col.collectionId]: { ...prev[col.collectionId], total: relevant.length } }));
+
+      const toFetch: Array<{ key: string; size: number }> = [];
+      let alreadyDone = 0;
+      for (const obj of relevant) {
+        const [prefix, filename] = [obj.key.split('/')[0], obj.key.split('/')[1]];
+        const dir = prefix === 'images' ? imagesDir : metadataDir;
+        try {
+          const fh = await dir.getFileHandle(filename);
+          const file = await fh.getFile();
+          if (file.size === obj.size) { alreadyDone++; continue; }
+        } catch { /* doesn't exist yet — needs fetching */ }
+        toFetch.push(obj);
+      }
+      setDownloadState(prev => ({ ...prev, [col.collectionId]: { ...prev[col.collectionId], done: alreadyDone } }));
+
+      let doneCount = alreadyDone;
+      for (let i = 0; i < toFetch.length; i += DOWNLOAD_URL_BATCH) {
+        const batch = toFetch.slice(i, i + DOWNLOAD_URL_BATCH);
+        const urlRes = await fetch('/api/filebase/presigned-urls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bucket, keys: batch.map(b => b.key) }),
+        });
+        if (!urlRes.ok) throw new Error(`Failed to get download URLs (${urlRes.status})`);
+        const { urls } = await urlRes.json();
+
+        let cursor = 0;
+        async function worker() {
+          while (cursor < batch.length) {
+            const obj = batch[cursor++];
+            const [prefix, filename] = [obj.key.split('/')[0], obj.key.split('/')[1]];
+            const dir = prefix === 'images' ? imagesDir : metadataDir;
+            try {
+              const resp = await fetch(urls[obj.key]);
+              if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
+              const fh = await dir.getFileHandle(filename, { create: true });
+              const writable = await fh.createWritable();
+              await resp.body.pipeTo(writable);
+              doneCount++;
+              setDownloadState(prev => ({ ...prev, [col.collectionId]: { ...prev[col.collectionId], done: doneCount } }));
+            } catch {
+              setDownloadState(prev => ({ ...prev, [col.collectionId]: { ...prev[col.collectionId], failed: (prev[col.collectionId]?.failed ?? 0) + 1 } }));
+            }
+          }
+        }
+        await Promise.all(Array.from({ length: DOWNLOAD_CONCURRENCY }, worker));
+      }
+
+      setDownloadState(prev => ({ ...prev, [col.collectionId]: { ...prev[col.collectionId], status: 'done' } }));
+    } catch (e: any) {
+      setDownloadState(prev => ({ ...prev, [col.collectionId]: { ...prev[col.collectionId], status: 'error', error: e.message ?? 'Download failed' } }));
+    }
+  }
 
   // ── Fetch collection sync status ──────────────────────────────────────────
   // silent=true skips the loading flag entirely -- used by the background
@@ -410,6 +519,7 @@ export default function SyncStatusPage() {
                   const canFb         = hasJob && !col.filebaseSynced && rs.filebase === 'idle';
                   const canRec        = hasJob && col.filebaseSynced && !col.recordsSynced && rs.records === 'idle';
                   const allDone       = col.filebaseSynced && col.recordsSynced && rs.filebase === 'idle' && rs.records === 'idle';
+                  const dl            = downloadState[col.collectionId] ?? { status: 'idle', done: 0, total: 0, failed: 0, folderName: '', error: '' };
 
                   return (
                     <div key={col.collectionId} className="sync-row" role="row">
@@ -510,6 +620,39 @@ export default function SyncStatusPage() {
                             <Link href="/dashboard/generator" style={{ fontSize: 12, color: '#60a5fa', textDecoration: 'none', fontWeight: 600 }}>
                               Go to Studio →
                             </Link>
+                          )}
+                          {col.filebaseSynced && col.exportBucket && (
+                            dl.status === 'running' ? (
+                              <div style={{ minWidth: 140 }}>
+                                <span style={{ color: '#60a5fa', fontSize: 12, fontWeight: 600 }}>
+                                  Downloading… {dl.total ? `${dl.done}/${dl.total}` : `${dl.done}`}
+                                  {dl.failed > 0 ? ` (${dl.failed} failed)` : ''}
+                                </span>
+                                <div style={styles.progressTrack}>
+                                  <div style={{
+                                    height: '100%',
+                                    width: dl.total ? `${Math.min(100, (dl.done / dl.total) * 100)}%` : '10%',
+                                    background: '#60a5fa', borderRadius: 2, transition: 'width .2s',
+                                  }} />
+                                </div>
+                              </div>
+                            ) : dl.status === 'done' ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                                <DoneCell msg={`Saved to "${dl.folderName}"${dl.failed > 0 ? ` — ${dl.failed} failed, click Download to retry` : ''}`} />
+                                <ActionBtn label="⬇ Download" color="#60a5fa" onClick={() => downloadCollection(col)} />
+                              </div>
+                            ) : dl.status === 'error' ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                                <ErrorCell msg={dl.error} />
+                                <ActionBtn label="↺ Retry Download" color="#60a5fa" onClick={() => downloadCollection(col)} />
+                              </div>
+                            ) : (
+                              <ActionBtn
+                                label="⬇ Download"
+                                color="#60a5fa"
+                                onClick={() => downloadCollection(col)}
+                              />
+                            )
                           )}
                         </div>
                       </div>
