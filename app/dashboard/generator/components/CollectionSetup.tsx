@@ -107,6 +107,61 @@ function parseTraitNamesFromWorkbook(workbook) {
   return { names: result, weights: resultWeights, rarities: resultRarities, ids: resultIds };
 }
 
+// Optional: a Force/Block rules sheet, generic like the trait-name parser
+// above — matched by header content (a column containing "layer" under an
+// "if"/"then" pair, plus a "type" column), not a hardcoded sheet name, so
+// any workbook using this shape works regardless of what the artist titled
+// the sheet (e.g. "Rules Format", "Conflicts", "Force-Block"). Groups rows
+// into the same { id, type, ifLayer, ifTrait, thenLayer, thenTraits: [] }
+// shape RulesTabContent already saves today (one entry per group of "then"
+// traits, not one per row) — see normalizeRules() in RulesTabContent.tsx.
+// Rows are validated per-row, not all-or-nothing like the trait-name sheet:
+// a single bad row shouldn't discard 400+ good ones, so invalid rows are
+// just skipped and counted for the summary message.
+function parseRulesFromWorkbook(workbook, knownLayerKeys, knownStemsByLayer) {
+  for (const sheetName of workbook.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+    if (!rows.length) continue;
+    const header = rows[0].map(h => String(h || '').trim().toLowerCase());
+    const ifLayerIdx   = header.findIndex(h => h.includes('if')   && h.includes('layer'));
+    const ifTraitIdx   = header.findIndex(h => h.includes('if')   && h.includes('trait'));
+    const typeIdx      = header.findIndex(h => h.includes('type'));
+    const thenLayerIdx = header.findIndex(h => h.includes('then') && h.includes('layer'));
+    const thenTraitIdx = header.findIndex(h => h.includes('then') && h.includes('trait'));
+    if ([ifLayerIdx, ifTraitIdx, typeIdx, thenLayerIdx, thenTraitIdx].includes(-1)) continue; // not a rules sheet
+
+    const grouped = new Map();
+    let skipped = 0;
+    for (const r of rows.slice(1)) {
+      if (!r.some(c => String(c ?? '').trim() !== '')) continue; // blank row — just skip, unlike the trait sheet this isn't positional
+      const ifLayer   = normalizeLayerKey(r[ifLayerIdx]);
+      const ifTrait   = String(r[ifTraitIdx] ?? '').trim();
+      const typeRaw   = String(r[typeIdx] ?? '').trim().toLowerCase();
+      const thenLayer = normalizeLayerKey(r[thenLayerIdx]);
+      const thenTrait = String(r[thenTraitIdx] ?? '').trim();
+      const type = typeRaw === 'force' ? 'force' : (typeRaw === 'block' || typeRaw === 'exclude') ? 'exclude' : null;
+      if (!ifLayer || !ifTrait || !thenLayer || !thenTrait || !type) { skipped++; continue; }
+      // Guard against a typo'd layer/trait reference silently saving as a
+      // rule that can never fire — only validate when we actually know the
+      // real layers/stems for this upload (i.e. files were also dropped).
+      if (knownLayerKeys && (!knownLayerKeys.has(ifLayer) || !knownLayerKeys.has(thenLayer))) { skipped++; continue; }
+      if (knownStemsByLayer) {
+        const ifStems = knownStemsByLayer.get(ifLayer);
+        const thenStems = knownStemsByLayer.get(thenLayer);
+        if ((ifStems && !ifStems.has(ifTrait)) || (thenStems && !thenStems.has(thenTrait))) { skipped++; continue; }
+      }
+      const key = [ifLayer, ifTrait, type, thenLayer].join(' ');
+      if (!grouped.has(key)) {
+        grouped.set(key, { id: Math.random().toString(36).slice(2), type, ifLayer: r[ifLayerIdx], ifTrait, thenLayer: r[thenLayerIdx], thenTraits: [] });
+      }
+      const g = grouped.get(key);
+      if (!g.thenTraits.includes(thenTrait)) g.thenTraits.push(thenTrait);
+    }
+    return { rules: [...grouped.values()], skipped };
+  }
+  return { rules: [], skipped: 0 };
+}
+
 function deriveLabelFromFolder(fname) {
   return fname.replace(/^\d+[-_]/, '').replace(/[_-]+/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase()).trim() || fname;
@@ -312,7 +367,7 @@ function readEntry(entry) {
   });
 }
 
-export default function CollectionSetup({ collection, onChange, onNext, onReset, onLayersChange, syncing = false, syncError = '', sessionRestored = false, collectionId = undefined, onDismissRestore = undefined }) {
+export default function CollectionSetup({ collection, onChange, onNext, onReset, onLayersChange, onConflictsChange, syncing = false, syncError = '', sessionRestored = false, collectionId = undefined, onDismissRestore = undefined }) {
   const [dragOver,      setDragOver]      = useState(false);
   const [uploading,     setUploading]     = useState(false);
   const [uploadDone,    setUploadDone]    = useState(false);
@@ -344,6 +399,11 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
   const [excelData,     setExcelData]     = useState({ names: {}, weights: {}, rarities: {} });
   const [excelFileName, setExcelFileName] = useState('');
   const [excelMsg,      setExcelMsg]      = useState('');
+  // Raw (not-yet-validated) rule rows from an Excel uploaded BEFORE the asset
+  // folder — held here so handleFolderUpload can re-validate + apply them
+  // against real file stems once they're known, same reasoning as excelData
+  // existing for names/weights/rarity.
+  const pendingExcelRulesRef = useRef(null);
   const folderRef = useRef(null);
   const excelRef  = useRef(null);
   const lastFilesRef = useRef(null); // remembers the dropped image files so a
@@ -429,6 +489,20 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     const { layers: parsedLayers, fileMap } = parseLayersFromFiles(files, excelData, sessionPrefix);
     storeFiles(fileMap);
     onLayersChange?.(parsedLayers);
+
+    // An Excel workbook uploaded BEFORE this folder may have included a rules
+    // sheet we couldn't validate yet (no real stems to check against at that
+    // point) — re-parse it now that they're known.
+    if (pendingExcelRulesRef.current) {
+      const knownLayerKeys = new Set(parsedLayers.map(l => normalizeLayerKey(l.folder)));
+      const knownStemsByLayer = new Map(parsedLayers.map(l => [normalizeLayerKey(l.folder), new Set(l.assets.map(a => a.stem))]));
+      const { rules: parsedRules, skipped: skippedRules } = parseRulesFromWorkbook(pendingExcelRulesRef.current, knownLayerKeys, knownStemsByLayer);
+      pendingExcelRulesRef.current = null;
+      if (parsedRules.length) {
+        onConflictsChange?.(parsedRules);
+        setExcelMsg(prev => `${prev} ${parsedRules.length} rule(s) imported${skippedRules ? ` (${skippedRules} row(s) skipped — unrecognized layer/trait reference)` : ''}.`);
+      }
+    }
 
     // Show success immediately — no need to block the UI on the network
     setUploading(false);
@@ -580,11 +654,14 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     doServerUpload();
   }
 
-  // Optional: artist supplies a trait-names (+ optional weight) workbook (any
-  // layer set, any sheet/column layout). Re-parses already-dropped image
-  // files (if any) so names/weights apply whether the Excel arrives before
-  // or after the image folder. Force/Block rules are NOT read from Excel —
-  // those stay UI-driven, set/edited in the Organise tab's Rules panel.
+  // Optional: artist supplies a trait-names (+ optional weight/rarity, +
+  // optional Force/Block rules) workbook (any layer set, any sheet/column
+  // layout). Re-parses already-dropped image files (if any) so names/
+  // weights/rules apply whether the Excel arrives before or after the image
+  // folder. Rules apply through the exact same save path as manually adding
+  // them in the Organise tab's Rules panel (onConflictsChange -> the page's
+  // existing saveConflicts) — nothing about how rules are stored changes,
+  // only where the initial set can come from.
   async function handleExcelUpload(file) {
     if (!file) return;
     setExcelMsg('Reading workbook…');
@@ -597,13 +674,67 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
       const raritySheets = Object.keys(data.rarities).length;
       setExcelData(data);
       setExcelFileName(file.name);
+
+      // Rules sheet detection is independent of whether a trait-name sheet
+      // matched (a workbook can contain only a rules sheet) — but validating
+      // rows against real stems must NEVER re-parse layers with THIS
+      // upload's (possibly empty) names/weights/rarity data, or a
+      // non-matching Excel would silently wipe out whatever an earlier,
+      // successful Excel upload already applied. Use excelData (the last
+      // known-good enrichment) for that probe parse, never `data`.
       if (!matchedSheets) {
-        setExcelMsg('No matching sheets found — check that sheet names match your layer folder names and have a column with "name" in its header.');
+        let probeLayers = null;
+        if (lastFilesRef.current) {
+          ({ layers: probeLayers } = parseLayersFromFiles(lastFilesRef.current, excelData, sessionPrefixRef.current));
+        }
+        const knownLayerKeys = probeLayers ? new Set(probeLayers.map(l => normalizeLayerKey(l.folder))) : null;
+        const knownStemsByLayer = probeLayers
+          ? new Map(probeLayers.map(l => [normalizeLayerKey(l.folder), new Set(l.assets.map(a => a.stem))]))
+          : null;
+        const { rules: parsedRules, skipped: skippedRules } = parseRulesFromWorkbook(wb, knownLayerKeys, knownStemsByLayer);
+        if (!parsedRules.length && !skippedRules) {
+          setExcelMsg('No matching sheets found — check that sheet names match your layer folder names and have a column with "name" in its header.');
+          return;
+        }
+        const skipNote = skippedRules ? ` (${skippedRules} row(s) skipped — unrecognized layer/trait reference)` : '';
+        if (probeLayers) {
+          onConflictsChange?.(parsedRules);
+          pendingExcelRulesRef.current = null;
+          setExcelMsg(`No trait-name sheets found (check sheet names match your layer folders). ${parsedRules.length} rule(s) imported${skipNote}.`);
+        } else {
+          pendingExcelRulesRef.current = wb;
+          setExcelMsg('No trait-name sheets found — check that sheet names match your layer folder names. Rules will apply once you drop the layer folder.');
+        }
         return;
       }
+
+      let parsedLayers = null;
       if (lastFilesRef.current) {
-        const { layers: parsedLayers } = parseLayersFromFiles(lastFilesRef.current, data, sessionPrefixRef.current);
+        ({ layers: parsedLayers } = parseLayersFromFiles(lastFilesRef.current, data, sessionPrefixRef.current));
         onLayersChange?.(parsedLayers);
+      }
+
+      // Rules: validate against real stems when the folder is already known;
+      // otherwise remember the raw parse and let handleFolderUpload apply it
+      // once the folder arrives (mirrors excelData's order-independence).
+      const knownLayerKeys = parsedLayers ? new Set(parsedLayers.map(l => normalizeLayerKey(l.folder))) : null;
+      const knownStemsByLayer = parsedLayers
+        ? new Map(parsedLayers.map(l => [normalizeLayerKey(l.folder), new Set(l.assets.map(a => a.stem))]))
+        : null;
+      const { rules: parsedRules, skipped: skippedRules } = parseRulesFromWorkbook(wb, knownLayerKeys, knownStemsByLayer);
+      let ruleNote = '';
+      if (parsedRules.length || skippedRules) {
+        if (parsedLayers) {
+          onConflictsChange?.(parsedRules);
+          pendingExcelRulesRef.current = null;
+          ruleNote = `, ${parsedRules.length} rule(s) imported${skippedRules ? ` (${skippedRules} row(s) skipped — unrecognized layer/trait reference)` : ''}`;
+        } else {
+          pendingExcelRulesRef.current = wb; // re-parse once real stems are known
+          ruleNote = `, rules will apply once you drop the layer folder`;
+        }
+      }
+
+      if (parsedLayers) {
         const appliedCount = parsedLayers.reduce((n, l) => {
           const layerNames = data.names[normalizeLayerKey(l.folder)];
           return n + (layerNames && layerNames.length === l.assets.length ? l.assets.length : 0);
@@ -628,9 +759,9 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
           ? ` ⚠ ${idMismatchLayers.join(', ')}: this sheet's Trait ID column doesn't match your file names — applied by row order instead. For guaranteed-correct results, use "Download matching template" and fill that in instead of your own sheet.`
           : '';
 
-        setExcelMsg(`${matchedSheets} sheet(s) matched, ${appliedCount} trait name(s) applied${weightNote}${rarityNote}.${idWarning}`);
+        setExcelMsg(`${matchedSheets} sheet(s) matched, ${appliedCount} trait name(s) applied${weightNote}${rarityNote}${ruleNote}.${idWarning}`);
       } else {
-        setExcelMsg(`${matchedSheets} sheet(s) read — names/weights/rarity will apply once you drop the layer folder.`);
+        setExcelMsg(`${matchedSheets} sheet(s) read — names/weights/rarity will apply once you drop the layer folder${ruleNote}.`);
       }
     } catch (err) {
       console.error('[excel] parse failed:', err);

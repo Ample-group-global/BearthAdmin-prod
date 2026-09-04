@@ -364,6 +364,13 @@ export default function Page() {
             throw new Error(d.error ?? 'Layer sync failed — please check your connection and try again.');
           }
         }
+        // Persist any rules parsed from an Excel upload this session — for a
+        // brand-new collection, saveConflicts() couldn't PUT them earlier
+        // (collectionId was still null at upload time, see onConflictsChange
+        // above), so it only updated local state. Harmless to call again for
+        // an existing/resumed collection whose rules were already persisted
+        // on upload — same array, idempotent PUT.
+        if (conflicts.length > 0) await saveConflicts(conflicts);
         loadLayers(undefined, cid);
 
         // Re-fetch collection from DB so form reflects what was actually stored
@@ -445,6 +452,7 @@ export default function Page() {
             onNext={handleCollectionContinue}
             onReset={resetCollection}
             onLayersChange={loadLayers}
+            onConflictsChange={saveConflicts}
             syncing={syncing}
             syncError={syncError}
             sessionRestored={sessionRestored}
