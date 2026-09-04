@@ -396,6 +396,12 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
   // edits Name Format directly, so a deliberate custom format is never
   // silently overwritten.
   const [nameFormatEdited, setNameFormatEdited] = useState(false);
+  // Same reasoning as nameFormatEdited above -- auto-suggest Token Symbol
+  // from Collection Name (same sanitize rule as manual entry: uppercase,
+  // alphanumeric only, max 10 chars) as the user types, but stop the moment
+  // she edits Token Symbol directly so a deliberate custom symbol is never
+  // silently overwritten.
+  const [symbolEdited, setSymbolEdited] = useState(false);
   const [excelData,     setExcelData]     = useState({ names: {}, weights: {}, rarities: {} });
   const [excelFileName, setExcelFileName] = useState('');
   const [excelMsg,      setExcelMsg]      = useState('');
@@ -866,8 +872,10 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
               value={collection.name}
               onChange={e => {
                 const v = e.target.value;
-                if (nameFormatEdited) { set('name', v); return; }
-                onChange({ ...collection, name: v, nameFormat: v.trim() ? `${v.trim()} #{{id}}` : '#{{id}}' });
+                const next: typeof collection = { ...collection, name: v };
+                if (!nameFormatEdited) next.nameFormat = v.trim() ? `${v.trim()} #{{id}}` : '#{{id}}';
+                if (!symbolEdited) next.symbol = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+                onChange(next);
                 if (errors.name) setErrors(prev => { const n = { ...prev }; delete n.name; return n; });
               }}
               style={errors.name ? { borderColor: '#ef4444' } : undefined}
@@ -881,7 +889,7 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
               placeholder="BRT"
               maxLength={10}
               value={collection.symbol}
-              onChange={e => set('symbol', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
+              onChange={e => { setSymbolEdited(true); set('symbol', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10)); }}
               style={errors.symbol ? { borderColor: '#ef4444' } : undefined}
             />
             <span className="field-hint">Short uppercase identifier (e.g. BAYC, AZUKI). Max 10 characters.</span>
