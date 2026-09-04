@@ -150,7 +150,7 @@ function parseRulesFromWorkbook(workbook, knownLayerKeys, knownStemsByLayer) {
         const thenStems = knownStemsByLayer.get(thenLayer);
         if ((ifStems && !ifStems.has(ifTrait)) || (thenStems && !thenStems.has(thenTrait))) { skipped++; continue; }
       }
-      const key = [ifLayer, ifTrait, type, thenLayer].join(' ');
+      const key = [ifLayer, ifTrait, type, thenLayer].join(' ');
       if (!grouped.has(key)) {
         grouped.set(key, { id: Math.random().toString(36).slice(2), type, ifLayer: r[ifLayerIdx], ifTrait, thenLayer: r[thenLayerIdx], thenTraits: [] });
       }
