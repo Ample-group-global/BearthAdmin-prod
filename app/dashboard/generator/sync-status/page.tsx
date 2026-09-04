@@ -2,6 +2,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import SupplyBrowseModal from './components/SupplyBrowseModal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface CollectionRow {
@@ -45,6 +46,9 @@ export default function SyncStatusPage() {
   const [clearResyncBucket, setClearResyncBucket] = useState('');
   const [clearResyncStatus, setClearResyncStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [clearResyncMessage, setClearResyncMessage] = useState('');
+  // Click-a-collection's-Supply modal — reads Filebase directly, has no
+  // relation to the DB-backed NFT List page (kept as a separate component).
+  const [browseCollection, setBrowseCollection] = useState<{ name: string; supply: number } | null>(null);
   const [exportBucket,   setExportBucket]   = useState('');
   const [newBucket,      setNewBucket]      = useState('');
   const [bucketList,     setBucketList]     = useState<string[]>([]);
@@ -432,9 +436,16 @@ export default function SyncStatusPage() {
                         </div>
                       </div>
 
-                      {/* Supply */}
+                      {/* Supply — click to browse every NFT straight from Filebase
+                          (read-only check, separate from the NFT List/DB page) */}
                       <div className="sync-cell" role="cell" data-label="Supply">
-                        <span style={{ fontWeight: 700, fontSize: 16 }}>{col.supply.toLocaleString()}</span>
+                        <button
+                          onClick={() => setBrowseCollection({ name: col.collectionName, supply: col.supply })}
+                          title="Browse all NFTs for this collection directly from Filebase"
+                          style={styles.supplyBtn}
+                        >
+                          {col.supply.toLocaleString()}
+                        </button>
                       </div>
 
                       {/* Filebase sync */}
@@ -641,6 +652,15 @@ export default function SyncStatusPage() {
         </Overlay>
       )}
 
+      {/* ── Browse-from-Filebase Modal ─────────────────────────────────────── */}
+      {browseCollection && (
+        <SupplyBrowseModal
+          collectionName={browseCollection.name}
+          supply={browseCollection.supply}
+          onClose={() => setBrowseCollection(null)}
+        />
+      )}
+
       <style>{`
         @keyframes shimmer {
           0%   { transform: translateX(-100%); }
@@ -844,6 +864,7 @@ const styles: Record<string, any> = {
   statIconWrap: { width: 38, height: 38, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   statLabel:    { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 4 },
   statValue:    { fontSize: 22, fontWeight: 800 },
+  supplyBtn:    { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: 16, color: 'var(--text)', textDecoration: 'underline', textDecorationColor: 'var(--border)', textUnderlineOffset: 3 },
   errorBanner:  { padding: '14px 18px', background: '#1e1e1e', border: '1px solid #ef4444', borderRadius: 9, color: '#ef4444', marginBottom: 20, fontSize: 14 },
   loadingMsg:   { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center', padding: 64, color: 'var(--text-muted)', fontSize: 15 },
   spinnerLg:    { width: 28, height: 28, borderRadius: '50%', border: '3px solid var(--border)', borderTopColor: '#60a5fa' },
