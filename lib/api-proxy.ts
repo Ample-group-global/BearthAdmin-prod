@@ -28,16 +28,31 @@ export async function proxyToApi(
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
 
+  let response: Response;
   try {
-    const response = await fetch(url.toString(), {
+    response = await fetch(url.toString(), {
       method: options.method ?? "GET",
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       cache: "no-store",
     });
-    const data = await response.json();
+  } catch {
+    // fetch() itself threw -- the backend is genuinely unreachable (connection refused, DNS, etc.)
+    return NextResponse.json({ error: "API unreachable" }, { status: 503 });
+  }
+
+  // The backend responded, but not necessarily with JSON (e.g. a 404 for an
+  // unmounted route returns Express's default HTML error page). Parsing that
+  // as JSON used to throw here and get reported as "API unreachable" -- hiding
+  // the real status/reason behind a misleading "backend is down" message.
+  const text = await response.text();
+  try {
+    const data = text ? JSON.parse(text) : {};
     return NextResponse.json(data, { status: response.status });
   } catch {
-    return NextResponse.json({ error: "API unreachable" }, { status: 503 });
+    return NextResponse.json(
+      { error: `Backend returned ${response.status} with a non-JSON body`, detail: text.slice(0, 300) },
+      { status: response.status },
+    );
   }
 }

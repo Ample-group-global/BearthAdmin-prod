@@ -188,7 +188,7 @@ export default function WavesTable({
                 {waves.slice((wavePage - 1) * WAVES_PER_PAGE, wavePage * WAVES_PER_PAGE).map((w, i) => {
                   const isClosed = w.waveClosed || w.status === "closed";
                   const isLocked = w.priceLocked;
-                  const soldCount = w.soldCount ?? 0;
+                  const soldCount = w.onChain?.soldCount ?? w.soldCount ?? 0;
                   // Wave is closed with zero minted — reveal is irrelevant (no buyers); auto-reveal fires during treasury close
                   const isZeroMinted = isClosed && soldCount === 0 && (w.quantity ?? 0) > 0 && !w.closeAction;
                   return (
@@ -263,7 +263,7 @@ export default function WavesTable({
 
                       <td style={{ padding: "10px 14px", textAlign: "center" }}>
                         {(() => {
-                          const minted = w.soldCount ?? w.onChain?.soldCount ?? 0;
+                          const minted = w.onChain?.soldCount ?? w.soldCount ?? 0;
                           const pending = w.treasuryPendingCount ?? 0;
                           return (
                             <>
@@ -393,7 +393,7 @@ export default function WavesTable({
                             reveal_scheduled_at: w.revealScheduledAt, wave_start_triggered: false,
                             wave_end_triggered: true, wave_reveal_triggered: false,
                             is_revealed: w.waveRevealed ?? false, wave_revealed_at: w.waveRevealedAt,
-                            sold_count: w.soldCount ?? 0, quantity: w.quantity ?? 0,
+                            sold_count: w.onChain?.soldCount ?? w.soldCount ?? 0, quantity: w.quantity ?? 0,
                           });
                           if (w.waveRevealed) return (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"

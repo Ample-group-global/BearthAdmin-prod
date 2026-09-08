@@ -414,7 +414,7 @@ export default function WavesPage() {
   const completedCount = waves.filter(w =>
     ["revealed", "closed", "reveal_scheduled", "ready_reveal", "ended"].includes(deriveWaveDisplayStatus(w))
   ).length;
-  const totalSold = waves.reduce((s, w) => s + (w.soldCount ?? w.onChain?.soldCount ?? 0), 0);
+  const totalSold = waves.reduce((s, w) => s + (w.onChain?.soldCount ?? w.soldCount ?? 0), 0);
 
   const revealNow = Date.now();
   const readyCount = Math.max(
