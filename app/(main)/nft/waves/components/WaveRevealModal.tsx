@@ -42,6 +42,11 @@ export default function WaveRevealModal({
   onSuccess: (txHash: string) => void;
 }) {
   const [uri, setUri] = useState(wave.wave_reveal_uri ?? "");
+  // If a reveal URI is already saved in the DB, it was generated from the
+  // real pinned export (see project-reveal-pipeline-missing-folder-cid-2026-09-10) --
+  // lock it read-only so an admin can't fat-finger a bad URI into an
+  // irreversible on-chain reveal. Only editable when nothing is saved yet.
+  const uriLocked = Boolean(wave.wave_reveal_uri);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,14 +140,20 @@ export default function WaveRevealModal({
             <input
               value={uri}
               onChange={e => setUri(e.target.value)}
+              readOnly={uriLocked}
               placeholder="ipfs://Qm.../metadata/"
               className="w-full px-3 py-2 rounded-xl text-sm outline-none"
               style={{
                 border: `1px solid ${uri && !uri.startsWith("ipfs://") ? "#fca5a5" : "#e5e7eb"}`,
                 color: "#111827",
                 fontFamily: "monospace",
+                background: uriLocked ? "#f9fafb" : "#fff",
+                cursor: uriLocked ? "default" : "text",
               }}
             />
+            {uriLocked && (
+              <p className="text-xs mt-1" style={{ color: "#059669" }}>Loaded from the pinned export — locked to prevent a bad URI going on-chain.</p>
+            )}
             {uri && !uri.startsWith("ipfs://") && (
               <p className="text-xs mt-1" style={{ color: "#dc2626" }}>URI must start with ipfs://</p>
             )}

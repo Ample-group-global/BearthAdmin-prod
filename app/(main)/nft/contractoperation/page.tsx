@@ -4,23 +4,23 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useInterval } from "@/lib/useInterval";
 import { ErrBanner, TxBanner } from "@/components/nft/Banner";
 import MintOperationsTab, { type OnChainInfo, type CollectionConfig } from "@/components/nft/tabs/MintOperationsTab";
-import AdminSalesTab,     { type SaleMode, type Currency }             from "@/components/nft/tabs/AdminSalesTab";
 import CollectionControlsTab, { type ContractEvent }                   from "@/components/nft/tabs/CollectionControlsTab";
 import RoyaltyTab    from "@/components/nft/tabs/RoyaltyTab";
 import MembershipTab from "@/components/nft/tabs/MembershipTab";
 import AdvancedTab   from "@/components/nft/tabs/AdvancedTab";
+import WhitelistTab  from "@/components/nft/tabs/WhitelistTab";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS: { key: string; label: string }[] = [
   { key: "Mint Operations",       label: "Mint Operations" },
-  { key: "Admin Sales",           label: "Admin Sales" },
   { key: "Collection & Controls", label: "Collection & Controls" },
+  { key: "Whitelist",             label: "Whitelist" },
   { key: "Royalty",               label: "Royalty" },
   { key: "Membership",            label: "Membership" },
   { key: "Advanced",              label: "Advanced" },
 ];
-type Tab = "Mint Operations" | "Admin Sales" | "Collection & Controls" | "Royalty" | "Membership" | "Advanced";
+type Tab = "Mint Operations" | "Collection & Controls" | "Whitelist" | "Royalty" | "Membership" | "Advanced";
 
 // ─── Main Page (thin orchestrator) ───────────────────────────────────────────
 
@@ -30,8 +30,6 @@ export default function ContractOperationPage() {
   // Shared data (loaded once, refreshed on write)
   const [config,      setConfig]      = useState<CollectionConfig | null>(null);
   const [onChain,     setOnChain]     = useState<OnChainInfo | null>(null);
-  const [saleModes,   setSaleModes]   = useState<SaleMode[]>([]);
-  const [currencies,  setCurrencies]  = useState<Currency[]>([]);
   const [events,      setEvents]      = useState<ContractEvent[]>([]);
 
   // Page-level UI
@@ -48,15 +46,12 @@ export default function ContractOperationPage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [colData, lookupsData, evData] = await Promise.all([
+      const [colData, evData] = await Promise.all([
         fetch("/api/nft-sell/collection",               { credentials: "include" }).then(r => r.json()),
-        fetch("/api/nft-sell/lookups",                  { credentials: "include" }).then(r => r.json()),
         fetch("/api/nft-sell/collection/events?limit=20", { credentials: "include" }).then(r => r.json()),
       ]);
       setConfig(colData.config ?? null);
       setOnChain(colData.onChain ?? null);
-      setSaleModes(lookupsData.saleModes ?? []);
-      setCurrencies(lookupsData.currencies ?? []);
       setEvents(evData.events ?? []);
     } catch {
       setError("Failed to load collection data.");
@@ -165,8 +160,8 @@ export default function ContractOperationPage() {
       {/* ── Tab content ── */}
       <div className="flex-1 overflow-y-auto px-5 py-5">
         {tab === "Mint Operations"      && <MintOperationsTab    onChain={onChain} config={config} onRefresh={load} />}
-        {tab === "Admin Sales"          && <AdminSalesTab         saleModes={saleModes} currencies={currencies} />}
         {tab === "Collection & Controls" && <CollectionControlsTab onChain={onChain} config={config} events={events} onRefresh={load} />}
+        {tab === "Whitelist"            && <WhitelistTab />}
         {tab === "Royalty"              && <RoyaltyTab />}
         {tab === "Membership"           && <MembershipTab />}
         {tab === "Advanced"             && <AdvancedTab />}

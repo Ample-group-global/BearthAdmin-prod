@@ -1,11 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { SectionCard } from "@/components/nft/SectionCard";
 import { TxBanner, ErrBanner } from "@/components/nft/Banner";
 import { inputStyle, thStyle, tdStyle } from "@/components/nft/styles";
 import { ETH_ADDRESS_RE } from "@/lib/nft-constants";
 import type { OnChainInfo, CollectionConfig } from "./MintOperationsTab";
+
+interface TimelockStatus {
+  operationId: string;
+  purpose: string;
+  newValue: string | null;
+  eta: string;
+  ready: boolean;
+  done: boolean;
+  scheduledTxHash: string;
+  executedTxHash: string | null;
+  executedAt: string | null;
+}
 
 export interface ContractEvent {
   id: string;
@@ -35,6 +47,20 @@ export default function CollectionControlsTab({ onChain, config, events, onRefre
   const [opError,     setOpError]     = useState<string | null>(null);
   const [blindBoxUri, setBlindBoxUri] = useState(config?.blind_box_uri ?? "");
   const [treasury,    setTreasury]    = useState(config?.treasury_wallet ?? "");
+  const [blockWallet, setBlockWallet] = useState("");
+  const [timelock,    setTimelock]    = useState<TimelockStatus | null>(null);
+  const [timelockLoading, setTimelockLoading] = useState(true);
+
+  const loadTimelockStatus = useCallback(() => {
+    setTimelockLoading(true);
+    fetch("/api/nft-sell/collection/treasury/timelock-status", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => setTimelock(d.status && !d.status.done ? d.status : null))
+      .catch(() => {})
+      .finally(() => setTimelockLoading(false));
+  }, []);
+
+  useEffect(() => { loadTimelockStatus(); }, [loadTimelockStatus]);
 
   const doOp = async (opName: string, fn: () => Promise<Response>) => {
     setSaving(opName); setOpError(null); setTx(null);
@@ -57,13 +83,37 @@ export default function CollectionControlsTab({ onChain, config, events, onRefre
     }));
   };
 
-  const handleSetTreasury = () => {
+  const handleScheduleTreasury = () => {
     if (!ETH_ADDRESS_RE.test(treasury)) { setOpError("Treasury must be a valid Ethereum address (0x + 40 hex)."); return; }
-    doOp("treasury", () => fetch("/api/nft-sell/collection/treasury", {
+    setSaving("treasury"); setOpError(null); setTx(null);
+    fetch("/api/nft-sell/collection/treasury", {
       method: "PUT", credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wallet: treasury }),
-    }));
+    }).then(async res => {
+      const d = await res.json();
+      if (!res.ok) { setOpError(d.error ?? "Schedule failed."); return; }
+      setTx(d.scheduledTxHash);
+      loadTimelockStatus();
+    }).catch(() => setOpError("Network error."))
+      .finally(() => setSaving(null));
+  };
+
+  const handleExecuteTreasury = () => {
+    if (!timelock) return;
+    setSaving("treasury-execute"); setOpError(null); setTx(null);
+    fetch("/api/nft-sell/collection/treasury/execute", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operationId: timelock.operationId }),
+    }).then(async res => {
+      const d = await res.json();
+      if (!res.ok) { setOpError(d.error ?? "Execute failed."); return; }
+      setTx(d.txHash);
+      loadTimelockStatus();
+      await onRefresh();
+    }).catch(() => setOpError("Network error."))
+      .finally(() => setSaving(null));
   };
 
   const handleWithdraw = () => {
@@ -80,6 +130,19 @@ export default function CollectionControlsTab({ onChain, config, events, onRefre
       `/api/nft-sell/collection/${pause ? "pause" : "unpause"}`,
       { method: "POST", credentials: "include" }
     ));
+  };
+
+  const handleBlockWallet = (blocked: boolean) => {
+    if (!ETH_ADDRESS_RE.test(blockWallet)) { setOpError("Enter a valid Ethereum address (0x + 40 hex)."); return; }
+    const msg = blocked
+      ? `Block ${blockWallet} from minting and transfers?`
+      : `Unblock ${blockWallet}, restoring normal mint/transfer access?`;
+    if (!window.confirm(msg)) return;
+    doOp(blocked ? "block" : "unblock", () => fetch("/api/nft-sell/collection/block-account", {
+      method: "PUT", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet: blockWallet, blocked }),
+    }));
   };
 
   return (
@@ -120,24 +183,47 @@ export default function CollectionControlsTab({ onChain, config, events, onRefre
             </div>
           </SectionCard>
 
-          {/* Treasury Wallet */}
-          <SectionCard title="Treasury Wallet" subtitle="ETH from mint sales is withdrawable to this address. Requires DEFAULT_ADMIN_ROLE.">
+          {/* Treasury Wallet — gated behind a 48h Timelock, two-step flow */}
+          <SectionCard title="Treasury Wallet" subtitle="ETH from mint sales is withdrawable to this address. Changing it goes through BearthTimelock's 48-hour governance delay — schedule now, execute once the delay passes.">
             <div className="space-y-3">
-              <div className="flex gap-2">
-                <input type="text" value={treasury} onChange={e => setTreasury(e.target.value)}
-                  style={{ ...inputStyle, flex: 1, fontFamily: "monospace" }} placeholder="0x…" />
-                <button onClick={handleSetTreasury} disabled={saving === "treasury" || !treasury}
-                  className="px-4 py-2 text-xs font-bold text-white rounded-xl flex-shrink-0"
-                  style={{ background: saving === "treasury" || !treasury ? "#9bafc5" : "#41afeb" }}>
-                  {saving === "treasury" ? "Saving…" : "⛓ Set On-Chain"}
-                </button>
-              </div>
               <p className="text-xs" style={{ color: "#9bafc5" }}>
                 Current:{" "}
                 {config?.treasury_wallet
                   ? <span className="font-mono">{config.treasury_wallet}</span>
                   : "Not set"}
               </p>
+
+              {!timelockLoading && timelock && (
+                <div className="p-3 rounded-xl text-xs space-y-2"
+                  style={{ background: timelock.ready ? "rgba(22,163,74,0.06)" : "rgba(217,119,6,0.06)", border: `1px solid ${timelock.ready ? "rgba(22,163,74,0.25)" : "#fde68a"}` }}>
+                  <p className="font-semibold" style={{ color: timelock.ready ? "#16a34a" : "#d97706" }}>
+                    {timelock.ready ? "Ready to execute" : "Pending — Timelock delay in progress"}
+                  </p>
+                  <p style={{ color: "#6b7280" }}>
+                    New wallet: <span className="font-mono">{timelock.newValue}</span>
+                  </p>
+                  <p style={{ color: "#6b7280" }}>
+                    {timelock.ready ? "Executable now" : `Executable at ${new Date(timelock.eta).toLocaleString()}`}
+                  </p>
+                  <button onClick={handleExecuteTreasury} disabled={!timelock.ready || saving === "treasury-execute"}
+                    className="px-4 py-2 text-xs font-bold text-white rounded-xl"
+                    style={{ background: !timelock.ready || saving === "treasury-execute" ? "#9bafc5" : "#16a34a" }}>
+                    {saving === "treasury-execute" ? "Executing…" : "⛓ Execute Now"}
+                  </button>
+                </div>
+              )}
+
+              {!timelockLoading && !timelock && (
+                <div className="flex gap-2">
+                  <input type="text" value={treasury} onChange={e => setTreasury(e.target.value)}
+                    style={{ ...inputStyle, flex: 1, fontFamily: "monospace" }} placeholder="0x…" />
+                  <button onClick={handleScheduleTreasury} disabled={saving === "treasury" || !treasury}
+                    className="px-4 py-2 text-xs font-bold text-white rounded-xl flex-shrink-0"
+                    style={{ background: saving === "treasury" || !treasury ? "#9bafc5" : "#41afeb" }}>
+                    {saving === "treasury" ? "Scheduling…" : "⛓ Schedule Change (48h)"}
+                  </button>
+                </div>
+              )}
             </div>
           </SectionCard>
         </div>
@@ -169,6 +255,26 @@ export default function CollectionControlsTab({ onChain, config, events, onRefre
               style={{ background: "rgba(65,175,235,0.08)", color: "#41afeb", border: "1px solid rgba(65,175,235,0.3)" }}>
               {saving === "withdraw" ? "Withdrawing…" : "⛓ Withdraw ETH to Treasury"}
             </button>
+          </div>
+
+          {/* Block / Unblock Wallet — pre-mainnet checklist item, contractBlockAccount()
+              already existed in the service layer with no route/UI anywhere until now. */}
+          <div className="mt-4 pt-4" style={{ borderTop: "1px solid #fecaca" }}>
+            <p className="text-xs font-semibold mb-2" style={{ color: "#dc2626" }}>Block / Unblock Wallet</p>
+            <div className="flex flex-wrap gap-2">
+              <input type="text" value={blockWallet} onChange={e => setBlockWallet(e.target.value)}
+                style={{ ...inputStyle, flex: 1, minWidth: 260, fontFamily: "monospace" }} placeholder="0x…" />
+              <button onClick={() => handleBlockWallet(true)} disabled={saving === "block" || !blockWallet}
+                className="px-4 py-2 text-xs font-bold rounded-xl"
+                style={{ background: "rgba(220,38,38,0.08)", color: "#dc2626", border: "1px solid #fecaca" }}>
+                {saving === "block" ? "Blocking…" : "⛓ Block"}
+              </button>
+              <button onClick={() => handleBlockWallet(false)} disabled={saving === "unblock" || !blockWallet}
+                className="px-4 py-2 text-xs font-bold rounded-xl"
+                style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", border: "1px solid rgba(22,163,74,0.3)" }}>
+                {saving === "unblock" ? "Unblocking…" : "⛓ Unblock"}
+              </button>
+            </div>
           </div>
         </div>
       </section>

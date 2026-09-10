@@ -21,14 +21,71 @@ const EXPLORER: Record<string, string> = {
   mainnet: "https://etherscan.io/address/",
 };
 
+// Shared Bearth placeholder ("blind box") asset -- confirmed 2026-09-10 as the
+// default to use across new collection deploys: AssetBlindbox/blindbox.json
+// in the bearth-shared-assets bucket, whose own IPFS CID this is. Pre-filled
+// so the admin doesn't have to know/re-type this URI on every deploy, but
+// still fully editable for a collection that wants different placeholder art.
+const DEFAULT_BLIND_BOX_URI = "ipfs://QmeSsy5oz4HvjGEDH71Rrv2axqf7ZgUKHJncHPQWwQnvKp";
+// Same gateway BearthApi-V1's collection.ts already uses to resolve blind-box
+// assets for the Memory Hall gallery -- kept consistent rather than guessing
+// a different public gateway here.
+const IPFS_GATEWAY = "https://amgbearth.myfilebase.com/ipfs/";
+
+function toGatewayUrl(uri: string): string | null {
+  if (!uri.startsWith("ipfs://")) return null;
+  return IPFS_GATEWAY + uri.slice("ipfs://".length);
+}
+
+const fieldStyle = {
+  padding: "8px 10px",
+  border: "1px solid #d1d5db",
+  borderRadius: 8,
+  fontSize: 13,
+  color: "#111827",
+};
+
+const buttonStyle = (disabled: boolean) => ({
+  padding: "10px 20px",
+  borderRadius: 8,
+  border: "none",
+  fontWeight: 700,
+  fontSize: 13,
+  cursor: disabled ? "not-allowed" : "pointer",
+  background: disabled ? "#9ca3af" : "#6366f1",
+  color: "#fff",
+});
+
 export default function DeployContractPanel({ collectionId }: { collectionId: string | null }) {
   const [info, setInfo] = useState<ContractInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [network, setNetwork] = useState<"sepolia" | "mainnet">("sepolia");
-  const [blindBoxUri, setBlindBoxUri] = useState("");
+  const [blindBoxUri, setBlindBoxUri] = useState(DEFAULT_BLIND_BOX_URI);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [confirmMainnet, setConfirmMainnet] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Read-only preview of whatever blindBoxUri currently points at -- lets the
+  // admin see the actual placeholder art before deploying instead of trusting
+  // a raw ipfs:// string. Re-resolves whenever the URI changes (debounced).
+  useEffect(() => {
+    const uri = blindBoxUri.trim();
+    const metaUrl = toGatewayUrl(uri);
+    if (!metaUrl) { setPreviewImage(null); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetch(metaUrl)
+        .then(r => r.ok ? r.json() : null)
+        .then(meta => {
+          if (cancelled) return;
+          const imgUri = meta?.image as string | undefined;
+          setPreviewImage(imgUri ? toGatewayUrl(imgUri) : null);
+        })
+        .catch(() => { if (!cancelled) setPreviewImage(null); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [blindBoxUri]);
 
   useEffect(() => {
     if (!collectionId) { setLoading(false); return; }
@@ -93,44 +150,65 @@ export default function DeployContractPanel({ collectionId }: { collectionId: st
       </div>
 
       {deployedAddress ? (
-        <div className="exp-banner exp-banner-saved" style={{ marginTop: 12, flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
-          <span>
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 12px" }}>
+          <span style={{ color: "#166534" }}>
             Deployed on <strong>{info?.contractNetwork}</strong>
           </span>
           <a
             href={`${EXPLORER[info!.contractNetwork!]}${deployedAddress}`}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ fontFamily: "monospace", fontSize: 12.5 }}
+            style={{ fontFamily: "monospace", fontSize: 12.5, color: "#166534" }}
           >
             {deployedAddress}
           </a>
         </div>
       ) : (
+        // Inline styles throughout this branch, not the "exp-fb-*"/"btn
+        // btn-primary" classes above -- those only resolve when this shared
+        // component happens to render inside NFT Studio's own page (which
+        // loads studio.css), and rendered unstyled everywhere else (e.g. the
+        // Sync Status page). Self-contained styling here works regardless of
+        // which page embeds this component.
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <select
-              className="exp-fb-input"
-              style={{ minWidth: 160 }}
-              value={network}
-              onChange={e => { setNetwork(e.target.value as "sepolia" | "mainnet"); setConfirmMainnet(false); }}
-              disabled={deploying}
-            >
-              <option value="sepolia">Sepolia (testnet)</option>
-              <option value="mainnet">Ethereum Mainnet</option>
-            </select>
-            <input
-              className="exp-fb-input"
-              style={{ flex: 1, minWidth: 260 }}
-              placeholder="Blind box metadata URI (e.g. ipfs://...)"
-              value={blindBoxUri}
-              onChange={e => setBlindBoxUri(e.target.value)}
-              disabled={deploying}
-            />
-          </div>
+          <select
+            style={fieldStyle}
+            value={network}
+            onChange={e => { setNetwork(e.target.value as "sepolia" | "mainnet"); setConfirmMainnet(false); }}
+            disabled={deploying}
+          >
+            <option value="sepolia">Sepolia (testnet)</option>
+            <option value="mainnet">Ethereum Mainnet</option>
+          </select>
+          {/* Full-width, read-only -- this is the confirmed shared default
+              (see project memory), not meant to be hand-edited per deploy. */}
+          <input
+            style={{ ...fieldStyle, width: "100%", boxSizing: "border-box", fontFamily: "monospace", fontSize: 12.5, background: "#f9fafb", color: "#374151" }}
+            placeholder="Blind box metadata URI (e.g. ipfs://...)"
+            value={blindBoxUri}
+            readOnly
+            title="Read-only — this is the confirmed shared blind-box placeholder"
+          />
+
+          {/* Read-only preview of the placeholder art this URI resolves to --
+              lets the admin visually confirm before deploying instead of
+              trusting a raw ipfs:// string. Not editable here; change the
+              URI above to change what's previewed. */}
+          {previewImage && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <img
+                src={previewImage}
+                alt="Blind box preview (read-only)"
+                style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: "1px solid var(--border)" }}
+              />
+              <span style={{ fontSize: 12, color: "#6b7280" }}>
+                Placeholder art every token shows before reveal
+              </span>
+            </div>
+          )}
 
           {network === "mainnet" && (
-            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, color: "var(--text-muted)" }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, color: "#6b7280" }}>
               <input
                 type="checkbox"
                 checked={confirmMainnet}
@@ -145,9 +223,9 @@ export default function DeployContractPanel({ collectionId }: { collectionId: st
             </label>
           )}
 
-          <div>
+          <div style={{ display: "flex", justifyContent: "center" }}>
             <button
-              className="btn btn-primary"
+              style={buttonStyle(deploying || !blindBoxUri.trim() || (network === "mainnet" && !confirmMainnet))}
               onClick={deploy}
               disabled={deploying || !blindBoxUri.trim() || (network === "mainnet" && !confirmMainnet)}
             >
@@ -156,7 +234,7 @@ export default function DeployContractPanel({ collectionId }: { collectionId: st
           </div>
 
           {error && (
-            <div className="exp-banner exp-banner-error">
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: 8, padding: "8px 12px", fontSize: 12.5 }}>
               <span>{error}</span>
             </div>
           )}

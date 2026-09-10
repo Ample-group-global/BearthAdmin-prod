@@ -2,7 +2,9 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import SupplyBrowseModal from './components/SupplyBrowseModal';
+import DeployContractPanel from '../components/DeployContractPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface CollectionRow {
@@ -29,6 +31,12 @@ interface RowState {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function SyncStatusPage() {
+  const router = useRouter();
+  // Deploy Contract modal -- shown directly on this page once a collection's
+  // NFTs + metadata are both synced to Filebase AND synced into nft_records,
+  // per explicit request: the button should live here, not require a detour
+  // through Studio's Export tab.
+  const [deployCollection, setDeployCollection] = useState<{ id: string; name: string } | null>(null);
   const [collections,    setCollections]    = useState<CollectionRow[]>([]);
   const [loading,        setLoading]        = useState(true);
   const [pageError,      setPageError]      = useState('');
@@ -177,6 +185,20 @@ export default function SyncStatusPage() {
     } catch (e: any) {
       setDownloadState(prev => ({ ...prev, [col.collectionId]: { ...prev[col.collectionId], status: 'error', error: e.message ?? 'Download failed' } }));
     }
+  }
+
+  // ── Deep-link into Studio for a specific collection ───────────────────────
+  // Plain <Link href="/dashboard/generator"> carried no collection id, so
+  // Studio always landed on a blank "new collection" form unless a stale
+  // session/collection cookie happened to already point at the right one.
+  // Sets the same cookie Studio itself writes when saving a collection.
+  async function goToStudio(col: CollectionRow) {
+    await fetch('/api/session/collection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collectionId: col.collectionId, name: col.collectionName, supply: col.supply }),
+    }).catch(() => {});
+    router.push('/dashboard/generator');
   }
 
   // ── Fetch collection sync status ──────────────────────────────────────────
@@ -507,6 +529,14 @@ export default function SyncStatusPage() {
               </div>
             </div>
           ) : (
+            // Horizontal scroll wrapper -- the grid now has 8 columns (Sync
+            // Status/Deploy/Download split out of the old single Actions
+            // column), which no longer fits inside tableCard's width on
+            // anything narrower than a very wide desktop window. tableCard
+            // itself keeps overflow:hidden (for its rounded corners); this
+            // inner wrapper is the one that actually scrolls, so Download
+            // was previously just clipped off-screen with no way to reach it.
+            <div style={{ overflowX: 'auto' }}>
             <div className="sync-table" role="table">
               <div className="sync-thead" role="rowgroup">
                 <div className="sync-row sync-row-head" role="row">
@@ -515,7 +545,9 @@ export default function SyncStatusPage() {
                   <div className="sync-cell sync-cell-head" role="columnheader">Supply</div>
                   <div className="sync-cell sync-cell-head" role="columnheader">Filebase Sync</div>
                   <div className="sync-cell sync-cell-head" role="columnheader">NFT Records</div>
-                  <div className="sync-cell sync-cell-head" role="columnheader">Actions</div>
+                  <div className="sync-cell sync-cell-head" role="columnheader">Sync Status</div>
+                  <div className="sync-cell sync-cell-head" role="columnheader">Deploy</div>
+                  <div className="sync-cell sync-cell-head" role="columnheader">Download</div>
                 </div>
               </div>
               <div className="sync-tbody" role="rowgroup">
@@ -526,7 +558,13 @@ export default function SyncStatusPage() {
                   const recRunning    = rs.records  === 'running';
                   const canFb         = hasJob && !col.filebaseSynced && rs.filebase === 'idle';
                   const canRec        = hasJob && col.filebaseSynced && !col.recordsSynced && rs.records === 'idle';
-                  const allDone       = col.filebaseSynced && col.recordsSynced && rs.filebase === 'idle' && rs.records === 'idle';
+                  // 'done' counts as satisfied here, not just 'idle' -- otherwise the
+                  // just-finished sync's own success message ("9,999 records synced")
+                  // blocked this from ever becoming true until the page was manually
+                  // reloaded, even though col.filebaseSynced/recordsSynced (freshly
+                  // refetched right after the sync call resolves) already say yes.
+                  const allDone       = col.filebaseSynced && col.recordsSynced
+                    && rs.filebase !== 'running' && rs.records !== 'running';
                   const dl            = downloadState[col.collectionId] ?? { status: 'idle', done: 0, total: 0, failed: 0, folderName: '', error: '' };
 
                   return (
@@ -596,8 +634,11 @@ export default function SyncStatusPage() {
                         )}
                       </div>
 
-                      {/* Actions */}
-                      <div className="sync-cell" role="cell" data-label="Actions">
+                      {/* Sync Status — trigger/status actions for getting a collection
+                          from "just generated" to "fully synced". Split into its own
+                          column from Deploy/Download below (previously all three were
+                          stacked in one cramped "Actions" column). */}
+                      <div className="sync-cell" role="cell" data-label="Sync Status">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
                           {/* Filebase export is no longer triggered from this
                               page — this page only shows status. Triggering it
@@ -607,9 +648,9 @@ export default function SyncStatusPage() {
                               confusion (multiple job IDs, restart loops) on
                               Bearth Test1. Deep-link to the Studio instead. */}
                           {canFb && (
-                            <Link href="/dashboard/generator" style={{ fontSize: 12, color: '#60a5fa', textDecoration: 'none', fontWeight: 600 }}>
+                            <button onClick={() => goToStudio(col)} style={{ fontSize: 12, color: '#60a5fa', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
                               Export in Studio →
-                            </Link>
+                            </button>
                           )}
                           {canRec && (
                             <ActionBtn
@@ -625,49 +666,71 @@ export default function SyncStatusPage() {
                             <span style={{ color: '#22c55e', fontSize: 12, fontWeight: 700 }}>✓ All synced</span>
                           )}
                           {!hasJob && (
-                            <Link href="/dashboard/generator" style={{ fontSize: 12, color: '#60a5fa', textDecoration: 'none', fontWeight: 600 }}>
+                            <button onClick={() => goToStudio(col)} style={{ fontSize: 12, color: '#60a5fa', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
                               Go to Studio →
-                            </Link>
-                          )}
-                          {col.filebaseSynced && col.exportBucket && (
-                            dl.status === 'running' ? (
-                              <div style={{ minWidth: 140 }}>
-                                <span style={{ color: '#60a5fa', fontSize: 12, fontWeight: 600 }}>
-                                  Downloading… {dl.total ? `${dl.done}/${dl.total}` : `${dl.done}`}
-                                  {dl.failed > 0 ? ` (${dl.failed} failed)` : ''}
-                                </span>
-                                <div style={styles.progressTrack}>
-                                  <div style={{
-                                    height: '100%',
-                                    width: dl.total ? `${Math.min(100, (dl.done / dl.total) * 100)}%` : '10%',
-                                    background: '#60a5fa', borderRadius: 2, transition: 'width .2s',
-                                  }} />
-                                </div>
-                              </div>
-                            ) : dl.status === 'done' ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                                <DoneCell msg={`Saved to "${dl.folderName}"${dl.failed > 0 ? ` — ${dl.failed} failed, click Download to retry` : ''}`} />
-                                <ActionBtn label="⬇ Download" color="#60a5fa" onClick={() => downloadCollection(col)} />
-                              </div>
-                            ) : dl.status === 'error' ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                                <ErrorCell msg={dl.error} />
-                                <ActionBtn label="↺ Retry Download" color="#60a5fa" onClick={() => downloadCollection(col)} />
-                              </div>
-                            ) : (
-                              <ActionBtn
-                                label="⬇ Download"
-                                color="#60a5fa"
-                                onClick={() => downloadCollection(col)}
-                              />
-                            )
+                            </button>
                           )}
                         </div>
+                      </div>
+
+                      {/* Deploy — only ever a Deploy Contract button (or nothing until
+                          the collection is fully synced), kept separate from Sync
+                          Status/Download so it reads as its own distinct action. */}
+                      <div className="sync-cell" role="cell" data-label="Deploy">
+                        {allDone ? (
+                          <ActionBtn
+                            label="⛓ Deploy Contract"
+                            color="#16a34a"
+                            onClick={() => setDeployCollection({ id: col.collectionId, name: col.collectionName })}
+                          />
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
+                      </div>
+
+                      {/* Download */}
+                      <div className="sync-cell" role="cell" data-label="Download">
+                        {col.filebaseSynced && col.exportBucket ? (
+                          dl.status === 'running' ? (
+                            <div style={{ minWidth: 140 }}>
+                              <span style={{ color: '#60a5fa', fontSize: 12, fontWeight: 600 }}>
+                                Downloading… {dl.total ? `${dl.done}/${dl.total}` : `${dl.done}`}
+                                {dl.failed > 0 ? ` (${dl.failed} failed)` : ''}
+                              </span>
+                              <div style={styles.progressTrack}>
+                                <div style={{
+                                  height: '100%',
+                                  width: dl.total ? `${Math.min(100, (dl.done / dl.total) * 100)}%` : '10%',
+                                  background: '#60a5fa', borderRadius: 2, transition: 'width .2s',
+                                }} />
+                              </div>
+                            </div>
+                          ) : dl.status === 'done' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                              <DoneCell msg={`Saved to "${dl.folderName}"${dl.failed > 0 ? ` — ${dl.failed} failed, click Download to retry` : ''}`} />
+                              <ActionBtn label="⬇ Download" color="#60a5fa" onClick={() => downloadCollection(col)} />
+                            </div>
+                          ) : dl.status === 'error' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                              <ErrorCell msg={dl.error} />
+                              <ActionBtn label="↺ Retry Download" color="#60a5fa" onClick={() => downloadCollection(col)} />
+                            </div>
+                          ) : (
+                            <ActionBtn
+                              label="⬇ Download"
+                              color="#60a5fa"
+                              onClick={() => downloadCollection(col)}
+                            />
+                          )
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
+            </div>
             </div>
           )}
         </div>
@@ -812,6 +875,28 @@ export default function SyncStatusPage() {
         />
       )}
 
+      {deployCollection && (
+        <Overlay onClose={() => setDeployCollection(null)}>
+          <ModalTitle>{deployCollection.name}</ModalTitle>
+          {/* Confirmed via direct code read (2026-09-10): contract.service.ts --
+              which backs BOTH the NFT Waves page and Contract Operations --
+              only ever reads the single global CONTRACT_ADDRESS env var, never
+              nft_collections.contract_address. Deploying a dedicated contract
+              here does NOT make Waves/Contract Operations use it; they keep
+              silently operating on the shared Bearth contract until that
+              per-collection routing is built (tracked separately, out of
+              scope for this page). Surfaced here so nobody assumes a deployed
+              contract is "live" for minting/waves immediately. */}
+          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginBottom: 12 }}>
+            <strong>Heads up:</strong> this deploys a real, separate contract for this collection only.
+            NFT Waves and Contract Operations don't know about it yet — they still operate on the shared
+            Bearth contract until that's wired up. Don't use Waves/mint against this collection expecting
+            it to hit the new contract.
+          </div>
+          <DeployContractPanel collectionId={deployCollection.id} />
+        </Overlay>
+      )}
+
       <style>{`
         @keyframes shimmer {
           0%   { transform: translateX(-100%); }
@@ -823,7 +908,7 @@ export default function SyncStatusPage() {
         .sync-stat-card { transition: transform 0.15s ease, box-shadow 0.15s ease; }
         .sync-stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.12); }
 
-        .sync-table { display: grid; grid-template-columns: 48px minmax(200px,2fr) 90px minmax(180px,1fr) minmax(180px,1fr) 160px; width: 100%; }
+        .sync-table { display: grid; grid-template-columns: 48px minmax(200px,2fr) 90px minmax(180px,1fr) minmax(180px,1fr) minmax(150px,1fr) 170px 170px; width: 100%; }
         .sync-thead { display: contents; }
         .sync-tbody { display: contents; }
         .sync-row { display: contents; }
