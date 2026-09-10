@@ -101,13 +101,21 @@ export default function SyncStatusPage() {
       return; // user cancelled the folder picker — not an error
     }
 
+    // Collection-scoped subfolder (e.g. "Bearth Test1/images", "Bearth Test1/metadata")
+    // instead of dumping straight into the picked folder — otherwise downloading
+    // multiple collections into the same picked folder collides on filename
+    // (every collection has an "images/1.png") and mixes their files together.
+    const collectionFolderName = (col.collectionName || col.collectionId).replace(/[\\/:*?"<>|]+/g, '_').trim() || col.collectionId;
+    const displayFolderName = `${dirHandle.name ?? ''}/${collectionFolderName}`;
+
     setDownloadState(prev => ({ ...prev, [col.collectionId]: {
-      status: 'running', done: 0, total: 0, failed: 0, folderName: dirHandle.name ?? '', error: '',
+      status: 'running', done: 0, total: 0, failed: 0, folderName: displayFolderName, error: '',
     } }));
 
     try {
-      const imagesDir = await dirHandle.getDirectoryHandle('images', { create: true });
-      const metadataDir = await dirHandle.getDirectoryHandle('metadata', { create: true });
+      const collectionDir = await dirHandle.getDirectoryHandle(collectionFolderName, { create: true });
+      const imagesDir = await collectionDir.getDirectoryHandle('images', { create: true });
+      const metadataDir = await collectionDir.getDirectoryHandle('metadata', { create: true });
 
       const listRes = await fetch(`/api/filebase/objects?bucket=${encodeURIComponent(bucket)}`);
       if (!listRes.ok) throw new Error(`Failed to list bucket objects (${listRes.status})`);

@@ -30,6 +30,16 @@ interface DashboardStats {
   collections: CollectionStat[];
 }
 
+interface WaveSummary { collectionName: string; waveNumber: number; waveName: string; status: string; isRevealed: boolean; soldCount: number; quantity: number; }
+interface CustomerSummary { userCode: string; name: string; referrerName: string | null; wallets: string[]; }
+interface TeamMember { name: string; email: string; role: string; isActive: boolean; }
+interface AdminOverview {
+  nftStats: { premint: number; minted: number; treasury: number };
+  waves: WaveSummary[];
+  customers: CustomerSummary[];
+  team: TeamMember[];
+}
+
 const CARD_COLORS = [
   { bg: "rgba(65,175,235,0.1)", stroke: "#41afeb" },
   { bg: "rgba(124,58,237,0.08)", stroke: "#7c3aed" },
@@ -66,6 +76,9 @@ export default function DashboardPage() {
   const [cards, setCards] = useState<MenuItem[] | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsError, setStatsError] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [overviewError, setOverviewError] = useState(false);
 
   // Hands the collection id to Waves via a short-lived server-side cookie
   // instead of a ?collectionId=<uuid> query param, so the raw id never shows
@@ -92,6 +105,7 @@ export default function DashboardPage() {
           .filter((m: MenuItem) => m.href !== "/dashboard") // exclude the dashboard menu itself
           .sort((a: MenuItem, b: MenuItem) => a.sortOrder - b.sortOrder);
         setCards(menus);
+        setIsAdmin(data.role === "admin");
       })
       .catch(() => setCards([]));
 
@@ -100,6 +114,16 @@ export default function DashboardPage() {
       .then(d => setStats(d))
       .catch(() => setStatsError(true));
   }, []);
+
+  // Admin has no action pages at all (view-only role) -- this consolidated
+  // read-only overview is the only place Admin sees NFT/wave/customer/team data.
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetch("/api/admin/overview", { credentials: "include" })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => setOverview(d))
+      .catch(() => setOverviewError(true));
+  }, [isAdmin]);
 
   const fmtEth = (n: number) => `${n.toLocaleString(undefined, { maximumFractionDigits: 4 })} ETH`;
 
@@ -180,6 +204,63 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Admin-only read-only overview — view stats, no actions ──────── */}
+      {isAdmin && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Overview (Read-Only)</h2>
+          {overviewError ? (
+            <p className="text-sm" style={{ color: "#9bafc5" }}>Couldn&apos;t load overview data — try refreshing.</p>
+          ) : overview === null ? (
+            <p className="text-sm" style={{ color: "#9bafc5" }}>Loading overview…</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <StatTile label="Pre-mint" value={overview.nftStats.premint.toLocaleString()} accent="#9bafc5" />
+                <StatTile label="Minted / Sold" value={overview.nftStats.minted.toLocaleString()} accent="#16a34a" />
+                <StatTile label="Treasury-Held" value={overview.nftStats.treasury.toLocaleString()} accent="#ea580c" />
+              </div>
+
+              <div className="bg-white rounded-xl p-4" style={{ border: "1px solid #e5e7eb" }}>
+                <h3 className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: "#9bafc5" }}>Wave Schedule &amp; Reveal Status</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {overview.waves.map((w, i) => (
+                    <div key={`${w.collectionName}-${w.waveNumber}-${i}`} className="text-xs p-2 rounded-lg" style={{ background: "#f8fafc" }}>
+                      <div className="font-semibold" style={{ color: "#24315f" }}>{w.collectionName} · Wave {w.waveNumber} — {w.waveName}</div>
+                      <div style={{ color: "#9bafc5" }}>{w.status} · {w.soldCount}/{w.quantity} sold · {w.isRevealed ? "revealed" : "not revealed"}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl p-4" style={{ border: "1px solid #e5e7eb" }}>
+                  <h3 className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: "#9bafc5" }}>Customers ({overview.customers.length})</h3>
+                  <div className="max-h-64 overflow-y-auto space-y-1">
+                    {overview.customers.map(c => (
+                      <div key={c.userCode} className="text-xs flex justify-between gap-2 py-1" style={{ borderBottom: "1px solid #f8fafc" }}>
+                        <span style={{ color: "#24315f" }}>{c.name} <span style={{ color: "#9bafc5" }}>({c.userCode})</span></span>
+                        <span style={{ color: "#9bafc5" }}>{c.wallets.length} wallet{c.wallets.length !== 1 ? "s" : ""}{c.referrerName ? ` · ref: ${c.referrerName}` : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl p-4" style={{ border: "1px solid #e5e7eb" }}>
+                  <h3 className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: "#9bafc5" }}>Bearth Team ({overview.team.length})</h3>
+                  <div className="max-h-64 overflow-y-auto space-y-1">
+                    {overview.team.map(t => (
+                      <div key={t.email} className="text-xs flex justify-between gap-2 py-1" style={{ borderBottom: "1px solid #f8fafc" }}>
+                        <span style={{ color: "#24315f" }}>{t.name}</span>
+                        <span style={{ color: "#9bafc5" }}>{t.role}{!t.isActive ? " · inactive" : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
