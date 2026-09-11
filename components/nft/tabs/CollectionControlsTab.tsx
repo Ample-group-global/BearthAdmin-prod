@@ -28,6 +28,7 @@ export interface ContractEvent {
 }
 
 interface Props {
+  collectionId: string;
   onChain: OnChainInfo | null;
   config:  CollectionConfig | null;
   events:  ContractEvent[];
@@ -41,7 +42,7 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function CollectionControlsTab({ onChain, config, events, onRefresh }: Props) {
+export default function CollectionControlsTab({ collectionId, onChain, config, events, onRefresh }: Props) {
   const [saving,      setSaving]      = useState<string | null>(null);
   const [tx,          setTx]          = useState<string | null>(null);
   const [opError,     setOpError]     = useState<string | null>(null);
@@ -79,7 +80,7 @@ export default function CollectionControlsTab({ onChain, config, events, onRefre
     doOp("blind-box", () => fetch("/api/nft-sell/collection/blind-box-uri", {
       method: "PUT", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uri: blindBoxUri }),
+      body: JSON.stringify({ uri: blindBoxUri, collectionId }),
     }));
   };
 
@@ -118,7 +119,7 @@ export default function CollectionControlsTab({ onChain, config, events, onRefre
 
   const handleWithdraw = () => {
     if (!window.confirm("Withdraw all ETH balance to the treasury wallet? This is immediate and irreversible.")) return;
-    doOp("withdraw", () => fetch("/api/nft-sell/collection/withdraw", { method: "POST", credentials: "include" }));
+    doOp("withdraw", () => fetch(`/api/nft-sell/collection/withdraw?collection_id=${collectionId}`, { method: "POST", credentials: "include" }));
   };
 
   const handlePause = (pause: boolean) => {
@@ -127,7 +128,7 @@ export default function CollectionControlsTab({ onChain, config, events, onRefre
       : "Unpause the contract? Minting and transfers will resume.";
     if (!window.confirm(msg)) return;
     doOp(pause ? "pause" : "unpause", () => fetch(
-      `/api/nft-sell/collection/${pause ? "pause" : "unpause"}`,
+      `/api/nft-sell/collection/${pause ? "pause" : "unpause"}?collection_id=${collectionId}`,
       { method: "POST", credentials: "include" }
     ));
   };
@@ -141,7 +142,7 @@ export default function CollectionControlsTab({ onChain, config, events, onRefre
     doOp(blocked ? "block" : "unblock", () => fetch("/api/nft-sell/collection/block-account", {
       method: "PUT", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wallet: blockWallet, blocked }),
+      body: JSON.stringify({ wallet: blockWallet, blocked, collectionId }),
     }));
   };
 

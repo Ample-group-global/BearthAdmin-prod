@@ -36,6 +36,7 @@ export interface CollectionConfig {
 }
 
 interface Props {
+  collectionId: string;
   onChain: OnChainInfo | null;
   config: CollectionConfig | null;
   onRefresh: () => Promise<void>;
@@ -50,7 +51,7 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function MintOperationsTab({ onChain, config, onRefresh }: Props) {
+export default function MintOperationsTab({ collectionId, onChain, config, onRefresh }: Props) {
   const [saving,  setSaving]  = useState<string | null>(null);
   const [tx,      setTx]      = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
@@ -92,7 +93,7 @@ export default function MintOperationsTab({ onChain, config, onRefresh }: Props)
     doOp("sbt", () => fetch("/api/nft-sell/collection/sbt", {
       method: "PUT", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: sbtEnabled }),
+      body: JSON.stringify({ enabled: sbtEnabled, collectionId }),
     }));
 
   const handleReserveMint = () => {
@@ -102,7 +103,7 @@ export default function MintOperationsTab({ onChain, config, onRefresh }: Props)
     doOp("admin-mint", () => fetch("/api/nft-sell/collection/admin-mint", {
       method: "POST", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: mintTo, qty }),
+      body: JSON.stringify({ to: mintTo, qty, collectionId }),
     }));
   };
 

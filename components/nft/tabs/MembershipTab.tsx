@@ -29,7 +29,7 @@ interface WalletMembership {
 
 const RARITY_OPTIONS = ["", "legendary", "epic", "rare", "common"];
 
-export default function MembershipTab() {
+export default function MembershipTab({ collectionId: _collectionId }: { collectionId: string }) {
   const [tiers, setTiers]     = useState<MembershipTier[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);

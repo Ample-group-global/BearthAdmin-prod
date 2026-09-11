@@ -24,7 +24,7 @@ interface Marketplace {
 
 
 
-export default function RoyaltyTab() {
+export default function RoyaltyTab({ collectionId }: { collectionId: string }) {
   const [royalty, setRoyalty]     = useState<RoyaltyConfig | null>(null);
   const [markets, setMarkets]     = useState<Marketplace[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -54,9 +54,10 @@ export default function RoyaltyTab() {
   const [mktTx,         setMktTx]         = useState<string | null>(null);
 
   const load = () => {
+    if (!collectionId) return;
     setLoading(true); setError(null);
     Promise.all([
-      fetch("/api/nft-sell/royalty",              { credentials: "include" }).then(r => r.json()),
+      fetch(`/api/nft-sell/royalty?collection_id=${collectionId}`, { credentials: "include" }).then(r => r.json()),
       fetch("/api/nft-sell/royalty/marketplaces", { credentials: "include" }).then(r => r.json()),
     ]).then(([rData, mData]) => {
       const r: RoyaltyConfig = rData.royalty ?? null;
@@ -71,7 +72,7 @@ export default function RoyaltyTab() {
     }).catch(() => { setError("Failed to load royalty settings."); setLoading(false); });
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [collectionId]);
 
   const handleSaveRoyalty = async () => {
     setSavingRoyalty(true); setRoyaltyError(null); setRoyaltyTx(null);
@@ -86,7 +87,7 @@ export default function RoyaltyTab() {
       const res = await fetch("/api/nft-sell/royalty", {
         method: "PUT", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ receiverAddress: receiver, feeBps: Math.round(pctNum * 100) }),
+        body: JSON.stringify({ receiverAddress: receiver, feeBps: Math.round(pctNum * 100), collectionId }),
       });
       const d = await res.json();
       if (!res.ok) { setRoyaltyError(d.error ?? "Save failed."); return; }
@@ -103,7 +104,7 @@ export default function RoyaltyTab() {
       const res = await fetch("/api/nft-sell/royalty/enforcement", {
         method: "PUT", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enforced: val }),
+        body: JSON.stringify({ enforced: val, collectionId }),
       });
       const d = await res.json();
       if (!res.ok) { setRoyaltyError(d.error ?? "Failed to toggle."); setEnforced(!val); return; }
@@ -119,7 +120,7 @@ export default function RoyaltyTab() {
       const res = await fetch("/api/nft-sell/royalty/transfer-validator", {
         method: "PUT", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ validatorAddress: validatorAddr }),
+        body: JSON.stringify({ validatorAddress: validatorAddr, collectionId }),
       });
       const d = await res.json();
       if (!res.ok) { setValidatorError(d.error ?? "Failed to set validator."); return; }

@@ -56,7 +56,7 @@ const inputCls = "w-full px-3 py-2 border rounded-lg text-sm font-mono focus:out
 const btnCls = (danger?: boolean, disabled?: boolean) =>
   `px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${disabled ? "opacity-50 cursor-not-allowed" : ""} ${danger ? "bg-red-600 hover:bg-red-700 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"}`;
 
-export default function AdvancedTab() {
+export default function AdvancedTab({ collectionId }: { collectionId: string }) {
   const [emergencyTokenId, setEmergencyTokenId] = useState("");
   const [emergencyFrom, setEmergencyFrom]       = useState("");
   const [emergencyTo, setEmergencyTo]           = useState("");
@@ -87,6 +87,7 @@ export default function AdvancedTab() {
           from: emergencyFrom.trim().toLowerCase(),
           to: emergencyTo.trim().toLowerCase(),
           reason: emergencyReason.trim(),
+          collectionId,
         }),
       });
       const d = await res.json();

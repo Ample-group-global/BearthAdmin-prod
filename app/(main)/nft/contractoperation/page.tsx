@@ -24,8 +24,17 @@ type Tab = "Mint Operations" | "Collection & Controls" | "Whitelist" | "Royalty"
 
 // ─── Main Page (thin orchestrator) ───────────────────────────────────────────
 
+interface CollectionOption { id: string; name: string; }
+
 export default function ContractOperationPage() {
   const [tab, setTab] = useState<Tab>("Mint Operations");
+
+  // Collection selector -- every action on this page must be scoped to a
+  // real collection (task #42/#43, feedback-no-shared-contract-standing-policy.md).
+  // Mirrors app/(main)/nft/waves/page.tsx's pattern exactly: fetch /api/master
+  // for the list, default to the first collection.
+  const [collections,  setCollections]  = useState<CollectionOption[]>([]);
+  const [collectionId, setCollectionId] = useState<string>("");
 
   // Shared data (loaded once, refreshed on write)
   const [config,      setConfig]      = useState<CollectionConfig | null>(null);
@@ -42,13 +51,27 @@ export default function ContractOperationPage() {
   const prevPhaseRef   = useRef<number | null>(null);
   const prevMintedRef  = useRef<number | null>(null);
 
+  // ── Fetch the collection list once, default to the first one ──
+  useEffect(() => {
+    fetch("/api/master", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => {
+        setCollections(d.collections ?? []);
+        if (!collectionId && d.collections?.length) setCollectionId(d.collections[0].id);
+        if (!d.collections?.length) setLoading(false);
+      })
+      .catch(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Load ──
   const load = useCallback(async () => {
+    if (!collectionId) return;
     setLoading(true); setError(null);
     try {
       const [colData, evData] = await Promise.all([
-        fetch("/api/nft-sell/collection",               { credentials: "include" }).then(r => r.json()),
-        fetch("/api/nft-sell/collection/events?limit=20", { credentials: "include" }).then(r => r.json()),
+        fetch(`/api/nft-sell/collection?collection_id=${collectionId}`,               { credentials: "include" }).then(r => r.json()),
+        fetch(`/api/nft-sell/collection/events?limit=20&collection_id=${collectionId}`, { credentials: "include" }).then(r => r.json()),
       ]);
       setConfig(colData.config ?? null);
       setOnChain(colData.onChain ?? null);
@@ -58,14 +81,15 @@ export default function ContractOperationPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [collectionId]);
 
   useEffect(() => { load(); }, [load]);
 
   // ── Silent watchdog ──
   const silentPoll = useCallback(async () => {
+    if (!collectionId) return;
     try {
-      const res = await fetch("/api/nft-sell/collection", { credentials: "include" });
+      const res = await fetch(`/api/nft-sell/collection?collection_id=${collectionId}`, { credentials: "include" });
       if (!res.ok) return;
       const d = await res.json();
       setWatchUpdated(new Date());
@@ -83,7 +107,7 @@ export default function ContractOperationPage() {
       prevPhaseRef.current  = oc.currentPhase;
       prevMintedRef.current = oc.totalMinted;
     } catch { /* silent */ }
-  }, []);
+  }, [collectionId]);
 
   useInterval(silentPoll, 60_000);
 
@@ -138,6 +162,28 @@ export default function ContractOperationPage() {
           </div>
         )}
 
+        {/* Collection selector -- every action on this page (pause/unpause,
+            withdraw, emergency transfer, royalty, block account, etc.) is
+            scoped to whichever collection is selected here. */}
+        {collections.length > 0 && (
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl flex-wrap"
+            style={{ background: "#f8fafc", border: "1px solid #e5e7eb" }}>
+            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: "#64748b" }}>Collection</span>
+            <select
+              value={collectionId}
+              onChange={e => setCollectionId(e.target.value)}
+              className="py-1.5 px-3 rounded-lg text-sm font-semibold bg-white outline-none"
+              style={{ border: "1px solid #cbd5e1", color: "#24315f" }}>
+              {collections.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <span className="text-xs" style={{ color: "#94a3b8" }}>
+              Every action on this page acts only on the selected collection&apos;s own contract.
+            </span>
+          </div>
+        )}
+
         {/* Page-level errors */}
         {error && <ErrBanner msg={error} />}
 
@@ -159,12 +205,12 @@ export default function ContractOperationPage() {
 
       {/* ── Tab content ── */}
       <div className="flex-1 overflow-y-auto px-5 py-5">
-        {tab === "Mint Operations"      && <MintOperationsTab    onChain={onChain} config={config} onRefresh={load} />}
-        {tab === "Collection & Controls" && <CollectionControlsTab onChain={onChain} config={config} events={events} onRefresh={load} />}
-        {tab === "Whitelist"            && <WhitelistTab />}
-        {tab === "Royalty"              && <RoyaltyTab />}
-        {tab === "Membership"           && <MembershipTab />}
-        {tab === "Advanced"             && <AdvancedTab />}
+        {tab === "Mint Operations"      && <MintOperationsTab    collectionId={collectionId} onChain={onChain} config={config} onRefresh={load} />}
+        {tab === "Collection & Controls" && <CollectionControlsTab collectionId={collectionId} onChain={onChain} config={config} events={events} onRefresh={load} />}
+        {tab === "Whitelist"            && <WhitelistTab collectionId={collectionId} />}
+        {tab === "Royalty"              && <RoyaltyTab collectionId={collectionId} />}
+        {tab === "Membership"           && <MembershipTab collectionId={collectionId} />}
+        {tab === "Advanced"             && <AdvancedTab collectionId={collectionId} />}
       </div>
     </div>
   );

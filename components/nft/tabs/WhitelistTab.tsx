@@ -34,7 +34,7 @@ const inputStyle: React.CSSProperties = { border: "1px solid #e5e7eb" };
 const btnPrimary = "px-4 py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40";
 const btnPrimaryStyle: React.CSSProperties = { background: "#24315f" };
 
-export default function WhitelistTab() {
+export default function WhitelistTab({ collectionId: _collectionId }: { collectionId: string }) {
   const { toasts, showToast, removeToast } = useToast();
   const {
     addresses, stats, isLoading, error,
