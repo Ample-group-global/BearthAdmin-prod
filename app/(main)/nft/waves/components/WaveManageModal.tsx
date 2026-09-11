@@ -409,8 +409,21 @@ export default function WaveManageModal({
           {chainError && <ErrBanner msg={chainError} onDismiss={() => setChainError(null)} />}
 
           {(() => {
-            const waveStarted = editWave.waveClosed || editWave.status === "active";
-            return !waveStarted ? (
+            // The save route's auto-push is fire-and-forget with no real
+            // retry behind it (its .catch() just logs "auto-trigger will
+            // retry" -- no such mechanism exists in the codebase). This
+            // button is the only actual recovery path if that push fails or
+            // never ran. Gating it on wall-clock status=="active" hid it the
+            // moment the wave's intended start time passed -- exactly when a
+            // failed push most needs re-pushing. The contract's own
+            // setWaveSchedule() only requires endTime > now, so that's the
+            // real constraint to gate on, not whether the wave "looks"
+            // started by wall clock. Found 2026-09-11: Wave 2's schedule
+            // silently never reached the chain and this button had already
+            // vanished by the time anyone checked.
+            const canPushSchedule = !editWave.waveClosed &&
+              !!editWave.scheduledEnd && new Date(editWave.scheduledEnd) > new Date();
+            return canPushSchedule ? (
               <div className="space-y-3 p-4 rounded-xl" style={{ background: "#f9fafb", border: "1px solid #e5e7eb" }}>
                 <p className="text-xs font-bold" style={{ color: "#24315f" }}>Push Wave Schedule On-Chain</p>
                 <p className="text-xs" style={{ color: "#9bafc5" }}>
