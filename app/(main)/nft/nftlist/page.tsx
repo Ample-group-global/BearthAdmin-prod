@@ -518,7 +518,12 @@ export default function NftPage() {
       render: r => {
         const code = r.deliveryStatusCode;
         const inTreasury = code === "treasury_wallet" || code === "transferred";
-        const isPendingSweep = code === "reserved" || code === "treasury_pending" || (r.tokenId == null && r.waveRevealScheduledAt != null);
+        // Previously also fired on tokenId==null && a reveal date merely
+        // scheduled -- every unsold row in a wave showed "reserved/pending
+        // sweep" the moment an admin set a reveal date, even before the wave
+        // closed or anything was actually reserved. treasury_pending/reserved
+        // are the real backend-computed signals for this state.
+        const isPendingSweep = code === "reserved" || code === "treasury_pending";
 
         if (inTreasury) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#ecfeff", color: "#0e7490", border: "1px solid #a5f3fc" }}>🏛 In Treasure</span>;
         if (r.tokenId != null && r.isRevealed) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#f5f3ff", color: "#7c3aed" }}>✦ Revealed</span>;
@@ -636,7 +641,7 @@ export default function NftPage() {
       key: "last_activity",
       header: "Last Activity",
       render: r => {
-        const isReserved = r.deliveryStatusCode === "treasury_pending" || (r.tokenId == null && r.waveRevealScheduledAt != null);
+        const isReserved = r.deliveryStatusCode === "treasury_pending";
         const latest =
           r.deliveredAt && (r.deliveryStatusCode === "treasury_wallet" || r.deliveryStatusCode === "transferred") ? { label: "Treasury Wallet", date: r.deliveredAt, color: "#0e7490" } :
             r.deliveredAt ? { label: "Delivered", date: r.deliveredAt, color: "#15803d" } :

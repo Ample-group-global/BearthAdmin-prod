@@ -208,7 +208,12 @@ export default function NftHistoryModal({
                       if (code === "delivered") return <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "#dcfce7", color: "#15803d" }}>✓ Delivered</span>;
                       if (code === "treasury_wallet" || code === "transferred") return <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "#ecfeff", color: "#0e7490", border: "1px solid #a5f3fc" }}>🏛 Treasury Wallet</span>;
                       if (code === "sold") return <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "#fef9c3", color: "#a16207" }}>💰 Sold</span>;
-                      if (code === "treasury_pending" || (viewRecord.tokenId == null && viewRecord.waveRevealScheduledAt != null))
+                      // Used to also fire on tokenId==null && a reveal date was merely
+                      // scheduled -- meaning any unsold token in a wave showed "Reserved,
+                      // wave closed, awaiting treasury move" the moment an admin set a
+                      // reveal date, even if the wave hadn't closed or moved anything yet.
+                      // treasury_pending is the real backend-computed signal for this state.
+                      if (code === "treasury_pending")
                         return <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }}>◈ Reserved</span>;
                       if (viewRecord.isRevealed) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "#f5f3ff", color: "#7c3aed" }}>✦ Revealed</span>;
                       if (viewRecord.tokenId != null) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "#eff6ff", color: "#2563eb" }}>⬡ Minted</span>;
@@ -338,7 +343,7 @@ export default function NftHistoryModal({
                   </div>
                   {(() => {
                     const isTrsy = viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred";
-                    const isRes = viewRecord.deliveryStatusCode === "treasury_pending" || (viewRecord.tokenId == null && viewRecord.waveRevealScheduledAt != null);
+                    const isRes = viewRecord.deliveryStatusCode === "treasury_pending";
                     if (isTrsy) return <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#ccfbf1", color: "#0d9488", border: "1px solid #99f6e4" }}>🏛 Treasury Wallet</span>;
                     if (viewRecord.isRevealed) return <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#f5f3ff", color: "#7c3aed" }}>✦ Revealed</span>;
                     if (viewRecord.mintedAt) return <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#eff6ff", color: "#3b82f6" }}>⬡ Minted</span>;
@@ -347,7 +352,7 @@ export default function NftHistoryModal({
                   })()}
                 </div>
                 {(() => {
-                  const isResTrack = viewRecord.deliveryStatusCode === "treasury_pending" || (viewRecord.tokenId == null && viewRecord.waveRevealScheduledAt != null);
+                  const isResTrack = viewRecord.deliveryStatusCode === "treasury_pending";
                   const isTreasury = viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred";
                   const pctWidth = isTreasury ? "100%" : viewRecord.isRevealed ? "100%" : isResTrack ? "100%" : viewRecord.mintedAt ? "65%" : viewRecord.waveScheduledStart && new Date(viewRecord.waveScheduledStart) < new Date() ? "32%" : "0%";
                   const gradient = isTreasury ? "linear-gradient(90deg,#14b8a6,#0d9488)" : viewRecord.isRevealed ? "linear-gradient(90deg,#6366f1,#8b5cf6)" : isResTrack ? "linear-gradient(90deg,#f59e0b,#b45309)" : "linear-gradient(90deg,#6366f1,#8b5cf6)";
@@ -375,7 +380,7 @@ export default function NftHistoryModal({
                     </div>
                   ))}
                   {(() => {
-                    const isRes = viewRecord.deliveryStatusCode === "treasury_pending" || (viewRecord.tokenId == null && viewRecord.waveRevealScheduledAt != null);
+                    const isRes = viewRecord.deliveryStatusCode === "treasury_pending";
                     const dotColor = viewRecord.isRevealed ? "#16a34a" : isRes ? "#b45309" : "#7c3aed";
                     const textColor = viewRecord.isRevealed && viewRecord.revealedAt ? "#16a34a" : isRes && viewRecord.waveRevealScheduledAt ? "#b45309" : viewRecord.waveRevealScheduledAt ? "#7c3aed" : "#cbd5e1";
                     const label = viewRecord.isRevealed ? "Revealed On" : isRes ? "Reserved Date" : "Reveal Date";
