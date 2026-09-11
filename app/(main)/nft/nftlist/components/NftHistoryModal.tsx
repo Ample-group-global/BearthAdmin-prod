@@ -454,7 +454,12 @@ export default function NftHistoryModal({
               </div>
               {[
                 { label: "Generated", date: viewRecord.createdAt, color: "#6366f1", desc: "NFT created in DB from generator", txHash: null },
-                { label: "Reserved", date: viewRecord.waveRevealScheduledAt ?? null, color: "#b45309", desc: (viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred") ? "Wave closed — NFT was unsold, reserved for treasury" : "Wave closed — NFT unsold, awaiting mint & move to treasury", txHash: null },
+                // A "Reserved" step only ever applies to a token that was
+                // genuinely unsold (never bought by a customer) -- gate on
+                // this token's own delivery status, not the wave's shared
+                // reveal-schedule date (every token in the wave has that,
+                // customer-purchased ones included).
+                { label: "Reserved", date: (["treasury_wallet", "transferred", "treasury_pending"].includes(viewRecord.deliveryStatusCode ?? "") || (viewRecord.tokenId == null && viewRecord.deliveryStatusCode !== "sold")) ? (viewRecord.waveRevealScheduledAt ?? viewRecord.createdAt ?? null) : null, color: "#b45309", desc: (viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred") ? "Wave closed — NFT was unsold, reserved for treasury" : "Wave closed — NFT unsold, awaiting mint & move to treasury", txHash: null },
                 { label: "Minted", date: viewRecord.mintedAt, color: "#7c3aed", desc: (viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred") ? "Minted on-chain via treasury close" : "Minted on-chain to buyer wallet", txHash: viewRecord.mintTxHash },
                 { label: "Revealed", date: viewRecord.revealedAt, color: "#8b5cf6", desc: "Artwork revealed, blind box opened", txHash: viewRecord.waveRevealTxHash },
                 { label: "Sold", date: viewRecord.soldAt, color: "#f59e0b", desc: viewRecord.lastSalePriceEth != null ? `Sold for ${Number(viewRecord.lastSalePriceEth).toFixed(4)} ETH` : "Ownership transferred on-chain", txHash: viewRecord.lastTxHash },

@@ -455,23 +455,31 @@ export default function NftPage() {
             <NftImage hash={r.imageIpfsHash} isRevealed={r.isRevealed} blindBoxUri={blindBoxImageUrl} size={52} />
           </div>
           <div>
-            {r.isRevealed && r.tokenId != null ? (
+            {/* Token ID (once minted) is always the primary/bold label -- the
+                serial number is always secondary and always explicitly
+                labeled "Serial", so a bare "#N" is never ambiguous with a
+                real on-chain token ID. */}
+            {r.tokenId != null ? (
               <>
                 <div className="font-mono font-bold text-sm leading-tight" style={{ color: "#0f172a" }}>
                   Token ID #{r.tokenId}
                 </div>
-                {artworkId(r) != null && (
+                {r.isRevealed && artworkId(r) != null ? (
                   <div className="text-xs mt-0.5 font-semibold" style={{ color: "#7c3aed" }}>
                     ✦ Artwork ID #{artworkId(r)}
+                  </div>
+                ) : (
+                  <div className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>
+                    Serial {r.serialNumber}
                   </div>
                 )}
               </>
             ) : (
               <>
-                <div className="font-mono font-bold text-sm leading-tight" style={{ color: "#0f172a" }}>{r.serialNumber}</div>
-                <div className="text-xs mt-0.5" style={{ color: r.tokenId != null ? "#64748b" : "#cbd5e1" }}>
-                  {r.tokenId != null ? `Token ID #${r.tokenId}` : "Not minted"}
+                <div className="font-mono font-bold text-sm leading-tight" style={{ color: "#cbd5e1" }}>
+                  Serial {r.serialNumber}
                 </div>
+                <div className="text-xs mt-0.5" style={{ color: "#cbd5e1" }}>Not minted</div>
               </>
             )}
             {r.tokenSbt && (
@@ -533,16 +541,17 @@ export default function NftPage() {
       header: "Status",
       align: "center",
       render: r => {
+        // Exactly 5 lifecycle states, in this precedence order:
+        // pre_mint -> Blind Box(Minted) -> Reserved -> In Treasure -> Revealed
         const code = r.deliveryStatusCode;
-        if (code === "delivered") return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#dcfce7", color: "#15803d" }}>✓ Delivered</span>;
-        if (code === "sold") return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#eff6ff", color: "#2563eb" }}>⬡ Blind Box</span>;
-        if (code === "reserved") return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }}>◈ Reserved</span>;
-        if (code === "treasury_pending") return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }}>⏳ Treasury Pending</span>;
-        if (code === "pool_assigned") return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>⬡ Reveal Pool</span>;
-        if (code === "treasury_wallet" || code === "transferred") return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#ecfeff", color: "#0e7490", border: "1px solid #a5f3fc" }}>🏛 Treasury Wallet</span>;
-        if (r.isRevealed) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#f5f3ff", color: "#7c3aed" }}>✦ Revealed</span>;
-        if (r.tokenId != null) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#eff6ff", color: "#2563eb" }}>⬡ Minted</span>;
-        return <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: "#f8fafc", color: "#94a3b8", border: "1px solid #e2e8f0" }}>○ Pre-mint</span>;
+        const inTreasury = code === "treasury_wallet" || code === "transferred";
+        const isPendingSweep = code === "reserved" || code === "treasury_pending" || (r.tokenId == null && r.waveRevealScheduledAt != null);
+
+        if (inTreasury) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#ecfeff", color: "#0e7490", border: "1px solid #a5f3fc" }}>🏛 In Treasure</span>;
+        if (r.tokenId != null && r.isRevealed) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#f5f3ff", color: "#7c3aed" }}>✦ Revealed</span>;
+        if (r.tokenId != null) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#eff6ff", color: "#2563eb" }}>⬡ Blind Box(Minted)</span>;
+        if (isPendingSweep) return <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }}>◈ Reserved</span>;
+        return <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: "#f8fafc", color: "#94a3b8", border: "1px solid #e2e8f0" }}>○ pre_mint</span>;
       },
     },
     {

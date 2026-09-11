@@ -61,6 +61,7 @@ interface WaveSchedule {
   wave_reveal_triggered: boolean;
   is_revealed: boolean;
   wave_revealed_at: string | null;
+  wave_reveal_uri?: string | null;
   sold_count: number;
   quantity: number;
 }
@@ -394,6 +395,7 @@ export default function WavesTable({
                             wave_end_triggered: true, wave_reveal_triggered: false,
                             is_revealed: w.waveRevealed ?? false, wave_revealed_at: w.waveRevealedAt,
                             sold_count: w.onChain?.soldCount ?? w.soldCount ?? 0, quantity: w.quantity ?? 0,
+                            wave_reveal_uri: w.waveRevealUri,
                           });
                           if (w.waveRevealed) return (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
