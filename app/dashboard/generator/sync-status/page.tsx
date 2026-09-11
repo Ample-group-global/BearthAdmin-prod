@@ -758,9 +758,9 @@ export default function SyncStatusPage() {
           <ModalTitle>{deployCollection.name}</ModalTitle>
           <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginBottom: 12 }}>
             <strong>Heads up:</strong> this deploys a real, separate contract for this collection only.
-            NFT Waves and Contract Operations don't know about it yet — they still operate on the shared
-            Bearth contract until that's wired up. Don't use Waves/mint against this collection expecting
-            it to hit the new contract.
+            NFT Waves and Contract Operations already read each collection's own contract address (no
+            shared/legacy contract exists anymore) — once this deploy completes, real on-chain actions for
+            this collection will go to the new contract immediately.
           </div>
           <DeployContractPanel collectionId={deployCollection.id} />
         </Overlay>
