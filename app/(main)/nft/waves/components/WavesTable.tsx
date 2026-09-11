@@ -31,6 +31,7 @@ interface Wave {
   waveRevealUri?: string | null;
   closeAction?: string | null;
   unsoldStrategy?: "auto_treasury" | "manual";
+  revealStrategy?: "auto" | "manual";
   whitelistRequired?: boolean;
   syncedAt?: string | null;
   createdAt: string;
@@ -367,7 +368,20 @@ export default function WavesTable({
                               </span>
                             );
                           }
-                          const isReady = !w.waveRevealed && !!w.revealScheduledAt && new Date(w.revealScheduledAt).getTime() <= Date.now();
+                          // Manual-strategy waves are documented (WaveManageModal) as
+                          // "auto-trigger is skipped -- click Reveal Now when ready", with
+                          // no reveal date required at all. Gating readiness on
+                          // revealScheduledAt unconditionally meant a manual wave could
+                          // never show "Reveal Now" without first being forced through
+                          // "Set Date" -- contradicting its own documented UX. Only the
+                          // wave having actually ended matters for manual; auto-strategy
+                          // still needs its scheduled reveal date to have passed.
+                          const waveHasEnded = !!w.scheduledEnd && new Date(w.scheduledEnd).getTime() <= Date.now();
+                          const isReady = !w.waveRevealed && waveHasEnded && (
+                            w.revealStrategy === "manual"
+                              ? true
+                              : !!w.revealScheduledAt && new Date(w.revealScheduledAt).getTime() <= Date.now()
+                          );
                           const makeWS = (): WaveSchedule => ({
                             wave_number: w.waveNumber, wave_name: w.name, status: w.status,
                             scheduled_start: w.scheduledStart, scheduled_end: w.scheduledEnd,
