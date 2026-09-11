@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import SupplyBrowseModal from './components/SupplyBrowseModal';
 import DeployContractPanel from '../components/DeployContractPanel';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 interface CollectionRow {
   srNo:           number;
   collectionId:   string;
@@ -29,13 +28,8 @@ interface RowState {
   message:  string;
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
 export default function SyncStatusPage() {
   const router = useRouter();
-  // Deploy Contract modal -- shown directly on this page once a collection's
-  // NFTs + metadata are both synced to Filebase AND synced into nft_records,
-  // per explicit request: the button should live here, not require a detour
-  // through Studio's Export tab.
   const [deployCollection, setDeployCollection] = useState<{ id: string; name: string } | null>(null);
   const [collections,    setCollections]    = useState<CollectionRow[]>([]);
   const [loading,        setLoading]        = useState(true);
@@ -43,28 +37,12 @@ export default function SyncStatusPage() {
   const [rowStates,      setRowStates]      = useState<Record<string, RowState>>({});
   const [exportModal,    setExportModal]    = useState<{ collectionId: string; jobId: string; name: string } | null>(null);
   const [recordsModal,   setRecordsModal]   = useState<{ collectionId: string; jobId: string; name: string; count: number } | null>(null);
-  // Set only when a sync attempt hit the "nft_records already holds a
-  // different collection's data" conflict — offers force-retry instead of
-  // just dead-ending on the error, since force was already supported
-  // server-side with no way to reach it from this page.
   const [forceConflict,  setForceConflict]  = useState<{ collectionId: string; jobId: string; name: string; message: string } | null>(null);
-  // Separate, deliberately more alarming modal — this wipes nft_records
-  // entirely before rebuilding it from a bucket's real files, unlike the
-  // per-collection sync above which only ever adds/updates rows.
   const [clearResyncModal, setClearResyncModal] = useState(false);
   const [clearResyncBucket, setClearResyncBucket] = useState('');
   const [clearResyncStatus, setClearResyncStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [clearResyncMessage, setClearResyncMessage] = useState('');
-  // Click-a-collection's-Supply modal — reads Filebase directly, has no
-  // relation to the DB-backed NFT List page (kept as a separate component).
   const [browseCollection, setBrowseCollection] = useState<{ name: string; supply: number } | null>(null);
-  // Per-collection direct-to-folder download -- moved here from the Studio's
-  // Export tab so every collection's download lives in one place instead of
-  // only being reachable while that specific collection happens to be loaded
-  // in Studio. Read-only (lists + fetches via presigned URLs), so unlike the
-  // Filebase-export trigger above, duplicating this logic doesn't carry the
-  // same job-state/restart-loop risk that kept export-triggering out of this
-  // page.
   const [downloadState, setDownloadState] = useState<Record<string, {
     status: 'idle' | 'running' | 'done' | 'error';
     done: number; total: number; failed: number; folderName: string; error: string;
@@ -74,9 +52,6 @@ export default function SyncStatusPage() {
   const [bucketList,     setBucketList]     = useState<string[]>([]);
   const [bucketsLoading, setBucketsLoading] = useState(false);
   const pollRefs = useRef<Record<string, any>>({});
-  // Per-collection stall tracking — mirrors ExportPanel.tsx's resumable
-  // export flow, so a large export started from this page recovers from a
-  // killed invocation the same way instead of hanging on a dead exportId.
   const lastProgressRef = useRef<Record<string, number>>({});
   const lastProgressTimeRef = useRef<Record<string, number>>({});
   const resumeCountRef = useRef<Record<string, number>>({});
@@ -84,12 +59,6 @@ export default function SyncStatusPage() {
   const DOWNLOAD_URL_BATCH = 500;
   const DOWNLOAD_CONCURRENCY = 40;
 
-  // ── Download a collection's NFTs + metadata straight to a local folder ────
-  // Ported from ExportPanel.tsx's downloadAllFilesDirect -- same presigned-URL
-  // batching, same skip-if-already-saved resumability (matches by filename +
-  // size, so re-running only fetches what's missing). Only needs a bucket
-  // name, so it works for any synced collection regardless of whether it's
-  // currently loaded in Studio.
   async function downloadCollection(col: CollectionRow) {
     const bucket = col.exportBucket;
     if (!bucket) return;
@@ -106,13 +75,9 @@ export default function SyncStatusPage() {
     try {
       dirHandle = await (window as any).showDirectoryPicker();
     } catch {
-      return; // user cancelled the folder picker — not an error
+      return;
     }
 
-    // Collection-scoped subfolder (e.g. "Bearth Test1/images", "Bearth Test1/metadata")
-    // instead of dumping straight into the picked folder — otherwise downloading
-    // multiple collections into the same picked folder collides on filename
-    // (every collection has an "images/1.png") and mixes their files together.
     const collectionFolderName = (col.collectionName || col.collectionId).replace(/[\\/:*?"<>|]+/g, '_').trim() || col.collectionId;
     const displayFolderName = `${dirHandle.name ?? ''}/${collectionFolderName}`;
 
@@ -143,7 +108,7 @@ export default function SyncStatusPage() {
           const fh = await dir.getFileHandle(filename);
           const file = await fh.getFile();
           if (file.size === obj.size) { alreadyDone++; continue; }
-        } catch { /* doesn't exist yet — needs fetching */ }
+        } catch { }
         toFetch.push(obj);
       }
       setDownloadState(prev => ({ ...prev, [col.collectionId]: { ...prev[col.collectionId], done: alreadyDone } }));
@@ -187,11 +152,6 @@ export default function SyncStatusPage() {
     }
   }
 
-  // ── Deep-link into Studio for a specific collection ───────────────────────
-  // Plain <Link href="/dashboard/generator"> carried no collection id, so
-  // Studio always landed on a blank "new collection" form unless a stale
-  // session/collection cookie happened to already point at the right one.
-  // Sets the same cookie Studio itself writes when saving a collection.
   async function goToStudio(col: CollectionRow) {
     await fetch('/api/session/collection', {
       method: 'POST',
@@ -201,12 +161,6 @@ export default function SyncStatusPage() {
     router.push('/dashboard/generator');
   }
 
-  // ── Fetch collection sync status ──────────────────────────────────────────
-  // silent=true skips the loading flag entirely -- used by the background
-  // poll during an active export (every ~6s), which otherwise flipped the
-  // same loading state as the real initial page load and made the whole
-  // table + summary cards visibly unmount and reappear every cycle for the
-  // full duration of any export.
   const fetchStatus = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
     setPageError('');
@@ -224,7 +178,6 @@ export default function SyncStatusPage() {
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
-  // Load bucket list when either modal that needs it opens
   useEffect(() => {
     if (!exportModal && !clearResyncModal) return;
     setBucketsLoading(true);
@@ -233,17 +186,13 @@ export default function SyncStatusPage() {
       .then(data => {
         const names: string[] = (data.buckets ?? []).map((b: any) => b.name).filter(Boolean);
         setBucketList(names);
-        // Never auto-select a bucket — see the identical fix/incident note
-        // in ExportPanel.tsx. The admin must explicitly pick one every time.
       })
       .catch(() => {})
       .finally(() => setBucketsLoading(false));
   }, [exportModal, clearResyncModal]);
 
-  // Cleanup all polling intervals on unmount
   useEffect(() => () => { Object.values(pollRefs.current).forEach(clearInterval); }, []);
 
-  // ── Row state helpers ─────────────────────────────────────────────────────
   function patchRow(id: string, patch: Partial<RowState>) {
     setRowStates(prev => ({
       ...prev,
@@ -251,7 +200,6 @@ export default function SyncStatusPage() {
     }));
   }
 
-  // ── Filebase export ───────────────────────────────────────────────────────
   async function startFilebaseExport() {
     if (!exportModal) return;
     const { collectionId, jobId } = exportModal;
@@ -280,9 +228,6 @@ export default function SyncStatusPage() {
       let exportId: string;
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        // An export already running for this collection isn't a failure —
-        // attach to its live progress instead of erroring out, same as
-        // ExportPanel.tsx's main Studio export flow.
         if (r.status === 409 && err.exportId) {
           exportId = err.exportId;
           lastProgressRef.current[collectionId] = err.progress ?? resumeFrom;
@@ -322,18 +267,8 @@ export default function SyncStatusPage() {
             return;
           }
 
-          // Same 30s stall threshold as ExportPanel.tsx — a premature
-          // reconnect against a still-alive invocation just attaches to it
-          // (see the 409 handling above), so tightening this costs nothing.
           const stalledForMs = Date.now() - lastProgressTimeRef.current[collectionId];
           if (stalledForMs > 30_000) {
-            // Before treating this as a real stall, check whether the export
-            // actually already finished — an upload that completes right as
-            // a poll is missed looks identical to a stalled one from here
-            // (progress just stops changing either way), and restarting a
-            // genuinely-finished export re-composites/re-uploads 9,999
-            // already-correct files for nothing. A real bucket listing is
-            // the only source that can't be fooled by a missed "done" poll.
             const supply = collections.find(c => c.collectionId === collectionId)?.supply ?? 0;
             if (supply > 0) {
               try {
@@ -350,7 +285,7 @@ export default function SyncStatusPage() {
                     return;
                   }
                 }
-              } catch { /* bucket check failed — fall through to normal stall handling below */ }
+              } catch { }
             }
 
             clearInterval(pollRefs.current[key]);
@@ -366,14 +301,13 @@ export default function SyncStatusPage() {
             }
             runFilebaseExportAttempt(collectionId, jobId, bucket, newProgress);
           }
-        } catch { /* retry next tick */ }
+        } catch { }
       }, 2000);
     } catch (e: any) {
       patchRow(collectionId, { filebase: 'error', message: e.message ?? 'Export failed' });
     }
   }
 
-  // ── Records sync ──────────────────────────────────────────────────────────
   async function runRecordsSync(collectionId: string, jobId: string, name: string, force: boolean) {
     patchRow(collectionId, { records: 'running', message: force ? 'Force syncing to NFT Records…' : 'Syncing to NFT Records…' });
     try {
@@ -385,9 +319,6 @@ export default function SyncStatusPage() {
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         const msg = err.error ?? `HTTP ${r.status}`;
-        // Server-supported force retry existed with no way to reach it from
-        // here — a real attempt just dead-ended on this exact message with
-        // no path forward except a direct API call.
         if (!force && r.status === 409 && msg.includes('already holds data for')) {
           patchRow(collectionId, { records: 'idle', message: '' });
           setForceConflict({ collectionId, jobId, name, message: msg });
@@ -415,14 +346,6 @@ export default function SyncStatusPage() {
     runRecordsSync(collectionId, jobId, name, true);
   }
 
-  // ── Clear & resync all from Filebase ──────────────────────────────────────
-  // Deliberately separate from the per-collection sync above: this deletes
-  // EVERY row in nft_records first, then rebuilds it from whichever bucket
-  // is given, using that bucket's real files as the source of truth — for
-  // recovering from nft_records being lost or corrupted, or switching which
-  // collection it holds. The backend route already required an explicit
-  // bucket (no guessing, after a real incident where an unrelated bucket's
-  // data got wiped); this only ever exposes that same requirement in the UI.
   async function startClearResync() {
     if (!clearResyncBucket.trim()) return;
     setClearResyncStatus('running');
@@ -447,15 +370,12 @@ export default function SyncStatusPage() {
     }
   }
 
-  // ── Derived summary ───────────────────────────────────────────────────────
   const totalFbSynced  = collections.filter(c => c.filebaseSynced).length;
   const totalRecSynced = collections.filter(c => c.recordsSynced).length;
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={styles.page} className="sync-page">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={styles.header} className="sync-header">
         <div style={styles.headerLeft}>
           <Link href="/dashboard/generator" style={styles.backLink}>
@@ -487,7 +407,6 @@ export default function SyncStatusPage() {
         </div>
       </div>
 
-      {/* ── Summary cards ──────────────────────────────────────────────────── */}
       {!loading && !pageError && collections.length > 0 && (
         <div style={styles.summaryGrid} className="sync-summary-grid">
           <StatCard label="Total Collections" value={String(collections.length)} accent="#818cf8" icon="layers" />
@@ -502,12 +421,10 @@ export default function SyncStatusPage() {
         </div>
       )}
 
-      {/* ── Error ──────────────────────────────────────────────────────────── */}
       {pageError && (
         <div style={styles.errorBanner}>{pageError}</div>
       )}
 
-      {/* ── Loading ────────────────────────────────────────────────────────── */}
       {loading && (
         <div style={styles.loadingMsg}>
           <div style={styles.spinnerLg} className="spin" />
@@ -515,7 +432,6 @@ export default function SyncStatusPage() {
         </div>
       )}
 
-      {/* ── Table ──────────────────────────────────────────────────────────── */}
       {!loading && !pageError && (
         <div style={styles.tableCard}>
           {collections.length === 0 ? (
@@ -529,13 +445,6 @@ export default function SyncStatusPage() {
               </div>
             </div>
           ) : (
-            // Horizontal scroll wrapper -- the grid now has 8 columns (Sync
-            // Status/Deploy/Download split out of the old single Actions
-            // column), which no longer fits inside tableCard's width on
-            // anything narrower than a very wide desktop window. tableCard
-            // itself keeps overflow:hidden (for its rounded corners); this
-            // inner wrapper is the one that actually scrolls, so Download
-            // was previously just clipped off-screen with no way to reach it.
             <div style={{ overflowX: 'auto' }}>
             <div className="sync-table" role="table">
               <div className="sync-thead" role="rowgroup">
@@ -558,11 +467,6 @@ export default function SyncStatusPage() {
                   const recRunning    = rs.records  === 'running';
                   const canFb         = hasJob && !col.filebaseSynced && rs.filebase === 'idle';
                   const canRec        = hasJob && col.filebaseSynced && !col.recordsSynced && rs.records === 'idle';
-                  // 'done' counts as satisfied here, not just 'idle' -- otherwise the
-                  // just-finished sync's own success message ("9,999 records synced")
-                  // blocked this from ever becoming true until the page was manually
-                  // reloaded, even though col.filebaseSynced/recordsSynced (freshly
-                  // refetched right after the sync call resolves) already say yes.
                   const allDone       = col.filebaseSynced && col.recordsSynced
                     && rs.filebase !== 'running' && rs.records !== 'running';
                   const dl            = downloadState[col.collectionId] ?? { status: 'idle', done: 0, total: 0, failed: 0, folderName: '', error: '' };
@@ -570,12 +474,10 @@ export default function SyncStatusPage() {
                   return (
                     <div key={col.collectionId} className="sync-row" role="row">
 
-                      {/* Sr. No */}
                       <div className="sync-cell" role="cell" data-label="#">
                         <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{col.srNo}</span>
                       </div>
 
-                      {/* Collection name + job info */}
                       <div className="sync-cell" role="cell" data-label="Collection">
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 15 }}>{col.collectionName}</div>
@@ -592,8 +494,6 @@ export default function SyncStatusPage() {
                         </div>
                       </div>
 
-                      {/* Supply — click to browse every NFT straight from Filebase
-                          (read-only check, separate from the NFT List/DB page) */}
                       <div className="sync-cell" role="cell" data-label="Supply">
                         <button
                           onClick={() => setBrowseCollection({ name: col.collectionName, supply: col.supply })}
@@ -604,7 +504,6 @@ export default function SyncStatusPage() {
                         </button>
                       </div>
 
-                      {/* Filebase sync */}
                       <div className="sync-cell" role="cell" data-label="Filebase Sync">
                         {fbRunning ? (
                           <RunningCell msg={rs.message || 'Exporting to Filebase…'} color="#60a5fa" />
@@ -617,7 +516,6 @@ export default function SyncStatusPage() {
                         )}
                       </div>
 
-                      {/* NFT Records */}
                       <div className="sync-cell" role="cell" data-label="NFT Records">
                         {!hasJob ? (
                           <div style={styles.dimText}>Generate first</div>
@@ -634,19 +532,8 @@ export default function SyncStatusPage() {
                         )}
                       </div>
 
-                      {/* Sync Status — trigger/status actions for getting a collection
-                          from "just generated" to "fully synced". Split into its own
-                          column from Deploy/Download below (previously all three were
-                          stacked in one cramped "Actions" column). */}
                       <div className="sync-cell" role="cell" data-label="Sync Status">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-                          {/* Filebase export is no longer triggered from this
-                              page — this page only shows status. Triggering it
-                              here duplicated the Studio's own Parallel Export
-                              flow with a separate, independently-buggy copy of
-                              the same trigger/poll logic, which caused real
-                              confusion (multiple job IDs, restart loops) on
-                              Bearth Test1. Deep-link to the Studio instead. */}
                           {canFb && (
                             <button onClick={() => goToStudio(col)} style={{ fontSize: 12, color: '#60a5fa', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}>
                               Export in Studio →
@@ -673,9 +560,6 @@ export default function SyncStatusPage() {
                         </div>
                       </div>
 
-                      {/* Deploy — only ever a Deploy Contract button (or nothing until
-                          the collection is fully synced), kept separate from Sync
-                          Status/Download so it reads as its own distinct action. */}
                       <div className="sync-cell" role="cell" data-label="Deploy">
                         {allDone ? (
                           <ActionBtn
@@ -688,7 +572,6 @@ export default function SyncStatusPage() {
                         )}
                       </div>
 
-                      {/* Download */}
                       <div className="sync-cell" role="cell" data-label="Download">
                         {col.filebaseSynced && col.exportBucket ? (
                           dl.status === 'running' ? (
@@ -736,7 +619,6 @@ export default function SyncStatusPage() {
         </div>
       )}
 
-      {/* ── Filebase Export Modal ──────────────────────────────────────────── */}
       {exportModal && (
         <Overlay onClose={() => setExportModal(null)}>
           <ModalTitle>Export to Filebase</ModalTitle>
@@ -782,7 +664,6 @@ export default function SyncStatusPage() {
         </Overlay>
       )}
 
-      {/* ── Records Sync Modal ─────────────────────────────────────────────── */}
       {recordsModal && (
         <Overlay onClose={() => setRecordsModal(null)}>
           <ModalTitle>Sync to NFT Records</ModalTitle>
@@ -802,7 +683,6 @@ export default function SyncStatusPage() {
         </Overlay>
       )}
 
-      {/* ── Force Sync Conflict Modal ──────────────────────────────────────── */}
       {forceConflict && (
         <Overlay onClose={() => setForceConflict(null)}>
           <ModalTitle>NFT Records Already Holds Different Data</ModalTitle>
@@ -822,7 +702,6 @@ export default function SyncStatusPage() {
         </Overlay>
       )}
 
-      {/* ── Clear & Resync From Filebase Modal ─────────────────────────────── */}
       {clearResyncModal && (
         <Overlay onClose={() => { if (clearResyncStatus !== 'running') setClearResyncModal(false); }}>
           <ModalTitle>Clear &amp; Resync NFT Records from Filebase</ModalTitle>
@@ -866,7 +745,6 @@ export default function SyncStatusPage() {
         </Overlay>
       )}
 
-      {/* ── Browse-from-Filebase Modal ─────────────────────────────────────── */}
       {browseCollection && (
         <SupplyBrowseModal
           collectionName={browseCollection.name}
@@ -878,15 +756,6 @@ export default function SyncStatusPage() {
       {deployCollection && (
         <Overlay onClose={() => setDeployCollection(null)}>
           <ModalTitle>{deployCollection.name}</ModalTitle>
-          {/* Confirmed via direct code read (2026-09-10): contract.service.ts --
-              which backs BOTH the NFT Waves page and Contract Operations --
-              only ever reads the single global CONTRACT_ADDRESS env var, never
-              nft_collections.contract_address. Deploying a dedicated contract
-              here does NOT make Waves/Contract Operations use it; they keep
-              silently operating on the shared Bearth contract until that
-              per-collection routing is built (tracked separately, out of
-              scope for this page). Surfaced here so nobody assumes a deployed
-              contract is "live" for minting/waves immediately. */}
           <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginBottom: 12 }}>
             <strong>Heads up:</strong> this deploys a real, separate contract for this collection only.
             NFT Waves and Contract Operations don't know about it yet — they still operate on the shared
@@ -946,8 +815,6 @@ export default function SyncStatusPage() {
     </div>
   );
 }
-
-// ── Sub-components ────────────────────────────────────────────────────────────
 
 const STAT_ICON_PATHS: Record<string, string> = {
   layers:   'M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
@@ -1083,7 +950,6 @@ function ModalTitle({ children }: any) {
   return <h3 style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700 }}>{children}</h3>;
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const styles: Record<string, any> = {
   page:       { padding: '24px 32px', maxWidth: 1280, margin: '0 auto', minHeight: '100vh', boxSizing: 'border-box' },
   header:     { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 14 },
@@ -1113,7 +979,6 @@ const styles: Record<string, any> = {
   dimText:      { color: 'var(--text-muted)', fontSize: 13 },
   progressTrack: { marginTop: 5, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', width: 130 },
   progressFill:  { height: '100%', borderRadius: 2, transition: 'width 0.4s ease' },
-  // Modal
   modalSub:   { margin: '0 0 18px', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.5 },
   label:      { display: 'block', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, color: 'var(--text-muted)' },
   select:     { width: '100%', padding: '9px 12px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 14, boxSizing: 'border-box' },

@@ -15,11 +15,6 @@ export default function AssetGrid({ layer, layerWeights, supply, onWeightChange,
       a.stem.localeCompare(b.stem, undefined, { numeric: true, sensitivity: 'base' })
     ), [layer.assets]);
 
-  // Same preference as the individual cards (AssetCard.tsx): the artist's
-  // own explicit classification over a live weight computation. These
-  // counts/filters used to always use the live tier only, so a trait could
-  // show e.g. "Epic" on its own card but never appear when filtering by
-  // Epic if its live-computed tier actually landed in a different band.
   function tierFor(a) {
     const prob = totalW > 0 ? (ws[a.stem] ?? 0) / totalW : 0;
     return resolveTier(a.rarityTier, getTier(prob));

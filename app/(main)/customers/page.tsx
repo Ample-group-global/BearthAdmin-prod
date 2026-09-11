@@ -3,13 +3,6 @@
 import { useEffect, useState, useRef } from "react";
 import DataTable, { type ColumnDef } from "@/components/DataTable";
 
-// Ported from the legacy pre-V1 BearthAdmin Customers page, scoped down to
-// Customers + Wallets ONLY per explicit instruction -- order history, the
-// reporting tab, and whitelist/VIP/on-chain-block actions all depended on
-// Sales-module tables or on-chain contract routes that don't exist in this
-// port's backend (BearthApi-V1 src/routes/customers.ts), so they're left out
-// rather than half-wired to nothing.
-
 interface Customer {
   id: string;
   userCode: string;
@@ -35,10 +28,6 @@ interface Wallet {
   addedAt: string;
 }
 
-// A referrer isn't a separate kind of account -- per explicit instruction,
-// ANY existing customer, AMG team member (admin/operation/technical_team/
-// sales_team), or dedicated external referrer (ext_referrer role) can refer
-// someone. referrers_list() already reflects exactly that eligibility set.
 interface Referrer {
   id: string;
   referrerCode: string;
@@ -67,7 +56,6 @@ export default function CustomersPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  // Create / edit modal
   const [showModal, setShowModal] = useState(false);
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
   const [saving, setSaving] = useState(false);
@@ -81,7 +69,6 @@ export default function CustomersPage() {
   const [referrerLoading, setReferrerLoading] = useState(false);
   const referrerSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Wallet modal (per customer)
   const [walletCustomer, setWalletCustomer] = useState<Customer | null>(null);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [walletsLoading, setWalletsLoading] = useState(false);
@@ -273,10 +260,6 @@ export default function CustomersPage() {
     { key: "referrer_name", header: "Referred By", sortKey: "referrer_name", render: (c) => <span style={{ color: "#6b7280" }}>{c.referrerName || "—"}</span> },
     {
       key: "wallets", header: "Wallets", sortKey: "wallet_count",
-      // Shows every linked wallet address inline -- a customer can have
-      // multiple, most commonly from auto-registering a new wallet on each
-      // Bearth-FE connect (see BearthApi-V1/src/routes/wallets.ts). Still
-      // opens the full management modal (add/remove) on click.
       render: (c) => {
         const addrs = c.walletAddresses ?? [];
         if (addrs.length === 0) {
@@ -410,7 +393,6 @@ export default function CustomersPage() {
         onSort={handleSort}
       />
 
-      {/* ── Wallet modal ─────────────────────────────────────────────── */}
       {walletCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.4)" }}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl">
@@ -514,7 +496,6 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* ── Create/edit modal ────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.4)" }}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">

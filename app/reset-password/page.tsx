@@ -83,7 +83,6 @@ export default function ResetPasswordPage() {
     <div className="login-bg">
       <div className="w-full max-w-[360px] sm:max-w-md">
 
-        {/* ── Logo ── */}
         <div className="flex flex-col items-center mt-8 sm:mt-10 mb-5 sm:mb-7">
           <div
             className="mb-3 rounded-[18px] shadow-xl"
@@ -99,7 +98,6 @@ export default function ResetPasswordPage() {
           </p>
         </div>
 
-        {/* ── Card ── */}
         <div
           className="rounded-2xl overflow-hidden"
           style={{
@@ -111,7 +109,6 @@ export default function ResetPasswordPage() {
 
           <div className="px-6 py-6 sm:px-8 sm:py-7">
 
-            {/* Invalid / missing token */}
             {tokenErr ? (
               <div className="flex flex-col items-center text-center py-2">
                 <div
@@ -131,7 +128,6 @@ export default function ResetPasswordPage() {
                 </Link>
               </div>
             ) : success ? (
-              /* ── Success state ── */
               <div className="flex flex-col items-center text-center py-2">
                 <div
                   className="w-12 h-12 rounded-full flex items-center justify-center mb-4"
@@ -148,7 +144,6 @@ export default function ResetPasswordPage() {
                 <p className="text-xs" style={{ color: "#94a3b8" }}>Redirecting to sign in…</p>
               </div>
             ) : (
-              /* ── Form ── */
               <>
                 <div className="mb-4">
                   <h2 className="text-sm font-bold mb-1" style={{ color: "#24315f" }}>Set new password</h2>
@@ -171,7 +166,6 @@ export default function ResetPasswordPage() {
                     </div>
                   )}
 
-                  {/* New password */}
                   <div>
                     <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "#24315f" }}>
                       New Password
@@ -188,7 +182,6 @@ export default function ResetPasswordPage() {
                       />
                       <EyeBtn show={showPw} onToggle={() => setShowPw(v => !v)} label={showPw ? "Hide password" : "Show password"} />
                     </div>
-                    {/* Strength bar */}
                     {password && (
                       <div className="mt-2">
                         <div className="flex gap-1 mb-1">
@@ -205,7 +198,6 @@ export default function ResetPasswordPage() {
                     )}
                   </div>
 
-                  {/* Confirm password */}
                   <div>
                     <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "#24315f" }}>
                       Confirm Password

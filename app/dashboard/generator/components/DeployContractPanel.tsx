@@ -2,13 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-// New collections only -- existing collections (Bearth V1, etc.) keep using
-// the shared global contract and never show this card as "not deployed."
-// Signer private keys never pass through this component or any request it
-// sends -- they live only in BearthApi-V1's server-side env vars
-// (DEPLOY_SEPOLIA_*/DEPLOY_MAINNET_*). This form only ever sends network +
-// blind box URI, neither of which is a secret.
-
 type ContractInfo = {
   contractAddress: string | null;
   contractNetwork: "sepolia" | "mainnet" | null;
@@ -21,15 +14,7 @@ const EXPLORER: Record<string, string> = {
   mainnet: "https://etherscan.io/address/",
 };
 
-// Shared Bearth placeholder ("blind box") asset -- confirmed 2026-09-10 as the
-// default to use across new collection deploys: AssetBlindbox/blindbox.json
-// in the bearth-shared-assets bucket, whose own IPFS CID this is. Pre-filled
-// so the admin doesn't have to know/re-type this URI on every deploy, but
-// still fully editable for a collection that wants different placeholder art.
 const DEFAULT_BLIND_BOX_URI = "ipfs://QmeSsy5oz4HvjGEDH71Rrv2axqf7ZgUKHJncHPQWwQnvKp";
-// Same gateway BearthApi-V1's collection.ts already uses to resolve blind-box
-// assets for the Memory Hall gallery -- kept consistent rather than guessing
-// a different public gateway here.
 const IPFS_GATEWAY = "https://amgbearth.myfilebase.com/ipfs/";
 
 function toGatewayUrl(uri: string): string | null {
@@ -66,9 +51,6 @@ export default function DeployContractPanel({ collectionId }: { collectionId: st
   const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Read-only preview of whatever blindBoxUri currently points at -- lets the
-  // admin see the actual placeholder art before deploying instead of trusting
-  // a raw ipfs:// string. Re-resolves whenever the URI changes (debounced).
   useEffect(() => {
     const uri = blindBoxUri.trim();
     const metaUrl = toGatewayUrl(uri);
@@ -164,12 +146,6 @@ export default function DeployContractPanel({ collectionId }: { collectionId: st
           </a>
         </div>
       ) : (
-        // Inline styles throughout this branch, not the "exp-fb-*"/"btn
-        // btn-primary" classes above -- those only resolve when this shared
-        // component happens to render inside NFT Studio's own page (which
-        // loads studio.css), and rendered unstyled everywhere else (e.g. the
-        // Sync Status page). Self-contained styling here works regardless of
-        // which page embeds this component.
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
           <select
             style={fieldStyle}
@@ -180,8 +156,6 @@ export default function DeployContractPanel({ collectionId }: { collectionId: st
             <option value="sepolia">Sepolia (testnet)</option>
             <option value="mainnet">Ethereum Mainnet</option>
           </select>
-          {/* Full-width, read-only -- this is the confirmed shared default
-              (see project memory), not meant to be hand-edited per deploy. */}
           <input
             style={{ ...fieldStyle, width: "100%", boxSizing: "border-box", fontFamily: "monospace", fontSize: 12.5, background: "#f9fafb", color: "#374151" }}
             placeholder="Blind box metadata URI (e.g. ipfs://...)"
@@ -190,10 +164,6 @@ export default function DeployContractPanel({ collectionId }: { collectionId: st
             title="Read-only — this is the confirmed shared blind-box placeholder"
           />
 
-          {/* Read-only preview of the placeholder art this URI resolves to --
-              lets the admin visually confirm before deploying instead of
-              trusting a raw ipfs:// string. Not editable here; change the
-              URI above to change what's previewed. */}
           {previewImage && (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <img

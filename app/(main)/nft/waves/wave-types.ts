@@ -1,5 +1,3 @@
-// Shared types for the NFT Waves feature (page + all sub-components).
-
 export interface Wave {
   id: string;
   waveNumber: number;

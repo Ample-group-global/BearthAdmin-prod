@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 const COLLECTION_COOKIE = 'nft_collection_id';
 const NAME_COOKIE       = 'nft_collection_name';
 const SUPPLY_COOKIE     = 'nft_supply';
-const MAX_AGE           = 30 * 24 * 60 * 60; // 30 days
+const MAX_AGE           = 30 * 24 * 60 * 60;
 
 const COOKIE_OPTS = {
   httpOnly: true,

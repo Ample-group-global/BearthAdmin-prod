@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import { ErrBanner } from "@/components/nft/Banner";
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
 interface Wave {
   id: string;
   waveNumber: number;
@@ -55,8 +53,6 @@ interface GasEstimate {
   sufficient: boolean;
 }
 
-// ─── TreasuryMoveModal ─────────────────────────────────────────────────────────
-
 export default function TreasuryMoveModal({
   wave,
   collectionId,
@@ -73,7 +69,6 @@ export default function TreasuryMoveModal({
   const [gasInfo, setGasInfo] = useState<GasEstimate | null>(null);
   const [gasLoading, setGasLoading] = useState(true);
 
-  // Fetch wallet balance + gas estimate on mount
   useEffect(() => {
     setGasLoading(true);
     fetch(`/api/nft-sell/waves/${wave.waveNumber}/treasury-close-estimate`, { credentials: "include" })
@@ -123,7 +118,6 @@ export default function TreasuryMoveModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" style={{ border: "1px solid #e5e7eb" }}>
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid #e5e7eb" }}>
           <div>
             <h2 className="text-sm font-bold" style={{ color: "#24315f" }}>
@@ -143,7 +137,6 @@ export default function TreasuryMoveModal({
         <div className="px-6 py-5 space-y-3">
           {error && <ErrBanner msg={error} onDismiss={() => setError(null)} />}
 
-          {/* Treasury wallet destination */}
           <div className="flex items-start gap-3 p-3.5 rounded-xl"
             style={{ border: "1.5px solid #41afeb", background: "rgba(65,175,235,0.04)" }}>
             <svg className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#41afeb" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -158,7 +151,6 @@ export default function TreasuryMoveModal({
             </div>
           </div>
 
-          {/* Wallet balance + gas estimate */}
           <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>
             <div className="px-3.5 py-2" style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
               <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "#6b7280" }}>
@@ -172,21 +164,18 @@ export default function TreasuryMoveModal({
               </div>
             ) : gasInfo ? (
               <div className="divide-y divide-gray-100">
-                {/* Balance row */}
                 <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-xs" style={{ color: "#6b7280" }}>Signer wallet balance</span>
                   <span className="text-xs font-mono font-semibold" style={{ color: gasInfo.sufficient ? "#15803d" : "#dc2626" }}>
                     {gasInfo.balanceEth.toFixed(6)} ETH
                   </span>
                 </div>
-                {/* Gas estimate row */}
                 <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-xs" style={{ color: "#6b7280" }}>Estimated gas cost</span>
                   <span className="text-xs font-mono font-semibold" style={{ color: "#374151" }}>
                     ~{gasInfo.estimatedGasEth.toFixed(6)} ETH
                   </span>
                 </div>
-                {/* Status row */}
                 <div className="flex items-center justify-between px-3.5 py-2.5"
                   style={{ background: gasInfo.sufficient ? "rgba(21,128,61,0.05)" : "rgba(220,38,38,0.05)" }}>
                   <span className="text-xs font-semibold" style={{ color: gasInfo.sufficient ? "#15803d" : "#dc2626" }}>
@@ -206,7 +195,6 @@ export default function TreasuryMoveModal({
             )}
           </div>
 
-          {/* Gas warning */}
           <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
             style={{ background: "rgba(217,119,6,0.07)", border: "1px solid rgba(217,119,6,0.2)", color: "#92400e" }}>
             <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: "#d97706" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">

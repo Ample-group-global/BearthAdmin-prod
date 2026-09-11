@@ -37,14 +37,9 @@ export async function proxyToApi(
       cache: "no-store",
     });
   } catch {
-    // fetch() itself threw -- the backend is genuinely unreachable (connection refused, DNS, etc.)
     return NextResponse.json({ error: "API unreachable" }, { status: 503 });
   }
 
-  // The backend responded, but not necessarily with JSON (e.g. a 404 for an
-  // unmounted route returns Express's default HTML error page). Parsing that
-  // as JSON used to throw here and get reported as "API unreachable" -- hiding
-  // the real status/reason behind a misleading "backend is down" message.
   const text = await response.text();
   try {
     const data = text ? JSON.parse(text) : {};

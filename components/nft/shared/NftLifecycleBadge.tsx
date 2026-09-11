@@ -1,9 +1,5 @@
 "use client";
 
-// Inline pill badge for the NFT lifecycle state.
-// Derives the label and color from deliveryStatusCode + isRevealed + tokenId props
-// so no NftRecord type import is needed in a shared component.
-
 interface NftLifecycleBadgeProps {
   deliveryStatusCode: string;
   isRevealed: boolean;
@@ -38,7 +34,6 @@ export default function NftLifecycleBadge({
   if (tokenId != null)
     return <span className={base} style={{ background: "#eff6ff", color: "#2563eb" }}>⬡ Minted</span>;
 
-  // Unminted NFT with a reveal scheduled → wave closed, NFT is unsold → Reserved
   if (tokenId == null && waveRevealScheduledAt != null)
     return (
       <span className={base} style={{ background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }}>

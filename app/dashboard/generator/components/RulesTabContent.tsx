@@ -3,16 +3,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useLayerFiles } from '../LayerFilesContext';
 
-// Standalone copy of the rule-builder UI (not shared with ConflictsPanel.tsx)
-// so this new embedded tab can't affect that already-working standalone
-// modal in any way. Auto-saves on every add/remove — no separate Save button
-// here, matching the instant-save pattern already used for rarity weights.
-//
-// Layout matches the reference tool exactly: one row — [IF trait, scoped to
-// the layer this modal is already open on] [force/block] [THEN trait,
-// searchable across every other layer] — instead of a generic two-dropdown
-// (layer, then trait) picker on both sides.
-
 function normalizeRules(rules: any[]) {
   return (rules ?? []).map(r => ({
     id:         r.id ?? Math.random().toString(36).slice(2),
@@ -46,7 +36,6 @@ function traitLabel(a) {
   return name ? `${a.stem} · ${name}` : a.stem;
 }
 
-// IF side — single-select, scoped to the current layer's own assets only.
 function IfTraitDropdown({ assets, value, onChange }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -76,8 +65,6 @@ function IfTraitDropdown({ assets, value, onChange }) {
   );
 }
 
-// THEN side — multi-select, searchable, grouped by layer (every layer except
-// none excluded — a rule can reference the same layer too).
 function ThenTraitDropdown({ layers, value, onChange }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -87,9 +74,6 @@ function ThenTraitDropdown({ layers, value, onChange }) {
   const filtered = useMemo(() => {
     if (!q.trim()) return layers;
     const needle = q.trim().toLowerCase();
-    // Match on display name OR raw stem — traits may be named from an Excel
-    // import (e.g. "Andy Head") while rule data/artists may still reference
-    // the file stem (e.g. "1-3"). Neither should be a dead end.
     return layers
       .map(l => ({
         ...l,
@@ -170,9 +154,6 @@ export default function RulesTabContent({ layer, layers, rules: initialRules, on
   const [ifTrait, setIfTrait]     = useState('');
   const [thenKeys, setThenKeys]   = useState<string[]>([]);
 
-  // The parent rolls `rules`/`initialRules` back to the last-known-saved value
-  // when a save fails (see saveConflicts in page.tsx) — resync local state so
-  // this list never keeps showing a rule that didn't actually persist to the DB.
   useEffect(() => { setRules(normalizeRules(initialRules)); }, [initialRules]);
 
   const getLabel     = (folder) => layers.find(l => l.folder === folder)?.label ?? folder;
@@ -189,7 +170,6 @@ export default function RulesTabContent({ layer, layers, rules: initialRules, on
 
   function addRule() {
     if (!ifTrait || thenKeys.length === 0) return;
-    // Group the picked then-traits by their own layer — one rule per distinct target layer.
     const byLayer: Record<string, string[]> = {};
     for (const key of thenKeys) {
       const [thenLayer, stem] = key.split('::');
@@ -234,7 +214,6 @@ export default function RulesTabContent({ layer, layers, rules: initialRules, on
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}>
-      {/* Fixed header: description + add-rule row */}
       <div style={{ flexShrink: 0, padding: '12px 20px 0' }}>
         <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 12, lineHeight: 1.5 }}>
           A rule allows you to <b>force</b> or <b>block</b> certain traits to match together. If you have too many rules, consider deleting unused ones.
@@ -256,12 +235,10 @@ export default function RulesTabContent({ layer, layers, rules: initialRules, on
         )}
       </div>
 
-      {/* Scrollable rules list — fills remaining space */}
       {rules.length > 0 ? (
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 20px 12px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: compact ? 1 : 6 }}>
             {rules.map((rule, idx) => compact ? (
-              /* ── Compact single-row rule ── */
               <div key={rule.id} style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '0 10px', height: 40,
@@ -277,7 +254,6 @@ export default function RulesTabContent({ layer, layers, rules: initialRules, on
                   {getLabel(rule.thenLayer)}
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--dim)', flexShrink: 0 }}>:</span>
-                {/* First 4 trait stems as chips */}
                 {rule.thenTraits.slice(0, 4).map(stem => (
                   <span key={stem} style={{
                     fontFamily: 'monospace', fontSize: 11, fontWeight: 600,
@@ -299,7 +275,6 @@ export default function RulesTabContent({ layer, layers, rules: initialRules, on
                 >✕</button>
               </div>
             ) : (
-              /* ── Expanded card rule ── */
               <div key={rule.id} style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 9, padding: '10px 12px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                   <div style={{ flex: 1, fontSize: 12, lineHeight: 1.6 }}>

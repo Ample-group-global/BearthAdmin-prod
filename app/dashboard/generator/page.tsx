@@ -45,12 +45,6 @@ export default function Page() {
   const [gearFocusStem, setGearFocusStem] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictRule[]>([]);
 
-  // Single entry point for the layer modal — used by the sidebar gear icon,
-  // the Advanced view's own "Layer Rarity" button, and clicking an individual
-  // trait card. Previously each of those opened a different popup (or, for
-  // the Advanced-view button, an under-propped copy of this same one missing
-  // Layer Metadata/Rules); now there's exactly one modal, optionally scrolled
-  // to a specific trait when opened from a card click.
   function openLayerModal(folder: string, focusStem?: string) {
     setGearFolder(folder);
     setGearFocusStem(focusStem ?? null);
@@ -88,18 +82,15 @@ export default function Page() {
     }
 
     const effectiveCid = cid ?? collectionId;
-    if (!effectiveCid) return; // no upload and no saved collection — Organise stays empty
+    if (!effectiveCid) return;
 
     fetch(`/api/layers?collectionId=${effectiveCid}`)
       .then(r => r.json())
       .then((data: Layer[]) => { if (data.length) applyLayers(data); })
-      .catch(() => { /* layers load silently — page shows empty state */ });
+      .catch(() => { });
   }, [activeFolder, collectionId]);
 
   useEffect(() => {
-    // Conflicts and weights now live on the collection/trait rows in the DB —
-    // both get picked up below from the same collection-detail fetches that
-    // already run to restore name/symbol/supply/etc.
     fetch('/api/session/collection').then(r => r.json()).catch(() => ({})).then((sessionData) => {
       const savedId: string | null = sessionData?.collectionId ?? null;
       loadLayers(undefined, savedId || undefined);
@@ -109,12 +100,6 @@ export default function Page() {
         setSessionRestored(true);
         const s = sessionData?.supply;
         if (s && s > 0) setCollection(prev => ({ ...prev, supply: s }));
-        // A single transient failure here (e.g. a pooled DB connection that
-        // died mid-request — see project-bearthapi-v1-auth-pool-stale-connection-bug)
-        // used to leave collection.supply permanently blank ('—' on the
-        // Export tab) with no retry and no indication anything went wrong.
-        // One retry, then a visible (non-fatal) warning, mirrors the fix
-        // already applied to the session-cookie save above.
         const fetchCollection = () => fetch(`/api/nft-gen/collections/${savedId}`)
           .then(r => r.ok ? r.json() : null)
           .catch(() => null);
@@ -126,10 +111,6 @@ export default function Page() {
           }
           const c = data?.collection ?? data;
           if (!c?.id) {
-            // The collection this browser had cached no longer exists in the
-            // DB (deleted from elsewhere) — clear the stale cookie and reset
-            // to a fresh Settings tab instead of leaving the summary card and
-            // Generate button showing dead data that fails on every click.
             fetch('/api/session/collection', { method: 'DELETE' }).catch(() => {});
             setCollectionId(null);
             setSessionRestored(false);
@@ -152,26 +133,14 @@ export default function Page() {
           if (Array.isArray(c.conflictRules)) setConflicts(c.conflictRules);
         });
       }
-      // No session cookie (e.g. a fresh browser, cleared cookies, or a
-      // different artist who has never used this tool yet) means a fresh,
-      // empty Settings tab — nothing more to do here. This used to fall back
-      // to auto-loading the single most-recently-created collection in the
-      // whole DB and silently attaching this browser's session to it, which
-      // meant any artist with no cookie yet could land on and start editing
-      // (or worse, re-generating over) a completely different artist's
-      // collection. Never assume "no cookie" means "resume somebody else's work."
     });
   }, []);
 
   const handleWeightChange = useCallback((folder: string, stem: string, value: number) => {
     setWeights(prev => ({ ...prev, [folder]: { ...prev[folder], [stem]: value } }));
 
-    // Weight lives on the trait row itself now — find its id and persist there.
     const traitId = layers.find(l => l.folder === folder)?.assets.find((a: LayerAsset) => a.stem === stem)?.id;
     if (!traitId) {
-      // Layers state hasn't caught up with what's on screen yet — don't pretend the
-      // edit was saved. Revert the optimistic update so the UI never shows a value
-      // that was never persisted.
       setWeights(prev => {
         const original = layers.find(l => l.folder === folder)?.assets.find((a: LayerAsset) => a.stem === stem)?.defaultWeight;
         if (original == null) return prev;
@@ -188,26 +157,16 @@ export default function Page() {
       ),
     }).then(async res => {
       if (!res.ok) {
-        // Surface the server's actual reason — a validation rejection isn't
-        // a network problem, and lumping both under one generic message
-        // hides which one actually happened.
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error ?? `PUT /api/nft-gen/traits/${traitId} failed (${res.status})`);
       }
     }).catch(err => {
-      // A failed save here used to only log to the console — the slider/tier
-      // value stayed optimistically updated on screen with zero indication
-      // it never actually persisted, which reads as "sometimes my selection
-      // just doesn't take" with no way to tell why.
       console.error('Rarity weight save failed:', err);
       const asset = layers.find(l => l.folder === folder)?.assets.find((a: LayerAsset) => a.stem === stem);
       setWeights(prev => {
         if (asset?.defaultWeight == null) return prev;
         return { ...prev, [folder]: { ...prev[folder], [stem]: asset.defaultWeight } };
       });
-      // Full technical detail stays in the console for debugging — the
-      // artist-facing message stays plain, and names the trait by its
-      // display name rather than the raw file stem she never sees elsewhere.
       setWeightSaveError(`Couldn't save the rarity change for "${asset?.name ?? stem}". Please try again.`);
     });
   }, [layers]);
@@ -225,10 +184,6 @@ export default function Page() {
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
-        // Roll back the optimistic UI update — a rule that only "looks" saved
-        // is worse than one that visibly failed, since the artist would have
-        // no way to know it never persisted. The raw backend reason goes to
-        // the console for debugging; what she sees stays plain and calm.
         console.error(`[saveConflicts] rule save failed (${r.status}):`, d.error);
         setConflicts(prevConflicts);
         setConflictSaveError("Couldn't save this rule. Please try again.");
@@ -277,12 +232,10 @@ export default function Page() {
     loadLayers();
   }
 
-  // Create/update collection in DB, then sync layers from disk
   async function handleCollectionContinue() {
     setSyncing(true);
     setSyncError('');
     try {
-      // Create or update collection in DB
       let cid = collectionId;
       if (!cid) {
         const r = await fetch('/api/nft-gen/collections', {
@@ -299,14 +252,6 @@ export default function Page() {
             supply:     collection.supply,
             nameFormat: collection.nameFormat,
             formatType: collection.format,
-            // Rules parsed from an Excel upload live only in `conflicts`
-            // local state until a collection exists to save them against
-            // (saveConflicts can't PUT with no collectionId yet). Sending
-            // them here too, atomically with everything else this same
-            // request already saves, means a brand-new collection's rules
-            // no longer depend on a separate conditional flush succeeding
-            // afterward -- see the flush below, kept as a belt-and-braces
-            // resave for the pre-existing-collection edit path.
             conflictRules: conflicts.length > 0 ? conflicts : undefined,
           }),
         });
@@ -314,13 +259,6 @@ export default function Page() {
         cid = data?.collection?.id ?? data?.id ?? null;
         if (cid) {
           setCollectionId(cid);
-          // The collection itself is already saved at this point — this
-          // cookie is only "which collection to resume on a fresh page
-          // load." A silently-swallowed failure here left real, saved data
-          // indistinguishable from data loss on the next visit (Organize
-          // tab shows "No layers yet" with 214 real traits sitting in the
-          // DB). One retry, then a visible (non-fatal) warning instead of
-          // silence if it still doesn't take.
           const rememberCollection = () => fetch('/api/session/collection', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -337,7 +275,6 @@ export default function Page() {
           }
         }
       } else {
-        // Update existing — sync all editable fields back to DB
         await fetch(`/api/nft-gen/collections/${cid}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -351,10 +288,6 @@ export default function Page() {
             supply:       collection.supply,
             nameFormat:   collection.nameFormat,
             formatType:   collection.format,
-            // Same atomic-save reasoning as the create branch above --
-            // whatever rules are currently in local state travel with this
-            // save too, instead of depending solely on the separate flush
-            // below.
             conflictRules: conflicts.length > 0 ? conflicts : undefined,
           }),
         });
@@ -365,9 +298,6 @@ export default function Page() {
         }).catch(() => {});
       }
 
-      // Sync layers into DB — only when the user drag-dropped files this session.
-      // With no fresh manifest, the DB already holds whatever was last synced;
-      // there's no local-disk fallback to fall back to anymore.
       if (cid) {
         if (layers.length > 0) {
           const syncResp = await fetch(`/api/nft-gen/collections/${cid}/sync-from-disk`, {
@@ -380,16 +310,9 @@ export default function Page() {
             throw new Error(d.error ?? 'Layer sync failed — please check your connection and try again.');
           }
         }
-        // Persist any rules parsed from an Excel upload this session — for a
-        // brand-new collection, saveConflicts() couldn't PUT them earlier
-        // (collectionId was still null at upload time, see onConflictsChange
-        // above), so it only updated local state. Harmless to call again for
-        // an existing/resumed collection whose rules were already persisted
-        // on upload — same array, idempotent PUT.
         if (conflicts.length > 0) await saveConflicts(conflicts);
         loadLayers(undefined, cid);
 
-        // Re-fetch collection from DB so form reflects what was actually stored
         fetch(`/api/nft-gen/collections/${cid}`)
           .then(r => r.ok ? r.json() : null)
           .then(data => {
@@ -421,18 +344,6 @@ export default function Page() {
   }
 
   function resetCollection() {
-    // Only clean up an upload that was never actually saved — collectionId
-    // is set the moment a collection is either freshly saved OR resumed
-    // from a prior session, so its layer files are real, persisted data at
-    // that point and must never be touched here. Only a still-null
-    // collectionId means "uploaded but abandoned before Save & Continue,"
-    // which is the one case this cleanup exists for. And even then, only
-    // this session's own upload folder (its random prefix, e.g.
-    // "umt9sfflbxu1zrk") is ever touched — never the whole shared bucket,
-    // which holds every artist's layers side by side. A bucket-wide wipe
-    // here previously destroyed other artists'/other collections' files
-    // (including a fully-generated one) the instant anyone clicked "Start
-    // a new collection."
     const sessionPrefix = !collectionId ? layers[0]?.assets[0]?.rel?.split('/')[0] : undefined;
     setCollection(DEFAULT_COLLECTION);
     setCollectionId(null);
@@ -454,14 +365,12 @@ export default function Page() {
   return (
     <LayerFilesProvider>
       <div className="studio-wrap">
-        {/* ── Header ── */}
         <header className="header">
           <div className="logo">🐻 Bearth <span>NFT Studio</span></div>
           <StepNav step={step} onStep={goToStep} />
           <div style={{ minWidth: 120 }} />
         </header>
 
-        {/* ── Step 1: Settings ── */}
         {step === 'settings' && (
           <CollectionSetup
             collection={collection}
@@ -480,7 +389,6 @@ export default function Page() {
           />
         )}
 
-        {/* ── Step 2: Organize ── */}
         {step === 'organize' && (
           <div className="org-layout">
             <Sidebar
@@ -492,8 +400,6 @@ export default function Page() {
               onGearClick={openLayerModal}
               onToggleOptional={handleToggleOptional}
               onReorder={(newFolderOrder: string[]) => {
-                // Apply the user's drag order immediately in state — no refetch.
-                // Refetching would re-sort numerically and undo the drag.
                 const map = new Map(layers.map(l => [l.folder, l]));
                 const reordered = newFolderOrder.map(f => map.get(f)).filter(Boolean) as Layer[];
                 setLayers(reordered);
@@ -528,15 +434,6 @@ export default function Page() {
                   layerWeights={weights[activeFolder!] ?? {}}
                   allWeights={weights}
                   supply={collection.supply}
-                  // Same session-prefix namespace every layer in this
-                  // collection already shares (from the initial bulk
-                  // upload) — derived from ANY layer that already has an
-                  // asset, not just the active one, since the active layer
-                  // itself may still be empty. Adding files here without
-                  // this would land in an unscoped flat key that a
-                  // different artist's own upload could collide with —
-                  // the exact incident this project's own upload route
-                  // comment already documents.
                   sessionPrefix={layers.flatMap(l => l.assets ?? []).find(a => a?.rel)?.rel?.split('/')[0]}
                   onWeightChange={handleWeightChange}
                   onLayersChange={loadLayers}
@@ -550,10 +447,6 @@ export default function Page() {
           </div>
         )}
 
-        {/* ── Step 3: Rarity ── */}
-        {/* Unreachable while StepNav's SHOW_RARITY_TAB flag is false — the nav never
-            offers 'rarity' as a step, so setStep(...) can't land here. Kept (not
-            deleted) so the tab can be restored by flipping that one flag. */}
         {step === 'rarity' && (
           <RarityTab
             layers={layers}
@@ -562,7 +455,6 @@ export default function Page() {
           />
         )}
 
-        {/* ── Step 4: Preview ── */}
         {step === 'preview' && (
           <PreviewPanel
             weights={weights}
@@ -573,7 +465,6 @@ export default function Page() {
           />
         )}
 
-        {/* ── Step 5: Export ── */}
         {step === 'export' && (
           <ExportPanel
             weights={weights}
@@ -584,7 +475,6 @@ export default function Page() {
           />
         )}
 
-        {/* ── Layer gear modal (sidebar ⚙ click) ── */}
         {gearFolder && (() => {
           const gearLayer = layers.find(l => l.folder === gearFolder);
           if (!gearLayer) return null;

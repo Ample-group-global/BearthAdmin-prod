@@ -255,7 +255,6 @@ export default function AdminUsersPage() {
 
   return (
     <div className="p-5">
-      {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-base font-bold" style={{ color: "#24315f" }}>Admin Users</h1>
@@ -338,7 +337,6 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      {/* Edit / Create modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
           <div className="bg-white rounded-lg w-full max-w-md mx-4" style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
@@ -417,7 +415,6 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      {/* Permission overrides modal */}
       {permUser && <PermissionsModal user={permUser} onClose={() => setPermUser(null)} />}
     </div>
   );

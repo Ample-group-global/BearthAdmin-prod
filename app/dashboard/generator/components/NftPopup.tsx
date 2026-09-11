@@ -3,13 +3,11 @@
 import { useRef, useLayoutEffect } from 'react';
 import { TIERS as CANONICAL_TIERS } from '../../../../lib/studio/tiers';
 
-// Colors come from lib/studio/tiers.ts (single source of truth also used by
-// RarityModal.tsx and RarityTab.tsx) instead of a separate local copy.
 const TIER_COLOR: Record<string, string> = Object.fromEntries(CANONICAL_TIERS.map(t => [t.label, t.color]));
 
 interface NftPopupItem {
   index: number;
-  src?: string;  // pre-rendered data URL (export panel path)
+  src?: string;
   combo?: Record<string, { rel: string; name: string; stem: string } | null>;
   layers?: { folder: string; label: string }[];
   bitmapCache?: { current: Record<string, ImageBitmap | HTMLImageElement> };
@@ -32,13 +30,11 @@ export default function NftPopup({ item, onClose }: { item: NftPopupItem | null;
     const H = canvas.height;
     ctx.clearRect(0, 0, W, H);
     if (item.src) {
-      // Export panel: card was pre-rendered to a data URL — draw it directly
       const img = new Image();
       img.onload = () => ctx.drawImage(img, 0, 0, W, H);
       img.src = item.src;
       return;
     }
-    // Preview panel: compose from layers + bitmaps
     for (const layer of (item.layers ?? [])) {
       const pick = item.combo?.[layer.folder];
       if (!pick?.rel) continue;

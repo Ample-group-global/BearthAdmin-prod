@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic';
 
 const API_BASE = process.env.BEARTH_API_URL!;
 
-// DB is the single source of truth for layer metadata — no local-disk fallback.
 export async function GET(req: NextRequest) {
   const collectionId = req.nextUrl.searchParams.get('collectionId');
   if (!collectionId) return NextResponse.json([]);

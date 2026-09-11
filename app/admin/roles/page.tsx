@@ -142,7 +142,6 @@ export default function RolesPage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Role list */}
       <div className="w-64 flex-shrink-0 bg-white overflow-y-auto" style={{ borderRight: "1px solid #e4e7ed" }}>
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 className="text-sm font-bold" style={{ color: "#24315f" }}>Roles</h2>
@@ -181,7 +180,6 @@ export default function RolesPage() {
         )}
       </div>
 
-      {/* Detail panel */}
       <div className="flex-1 overflow-auto">
         {!selectedRole ? (
           <div className="flex items-center justify-center h-full" style={{ color: "#c4c9d4" }}>
@@ -195,7 +193,6 @@ export default function RolesPage() {
           </div>
         ) : (
           <div className="p-5">
-            {/* Role header */}
             <div className="flex items-center gap-3 mb-4">
               <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: ROLE_COLOR[selectedRole.code] ?? "#9bafc5" }} />
               <div>
@@ -204,7 +201,6 @@ export default function RolesPage() {
               </div>
             </div>
 
-            {/* Tabs */}
             <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
               {(["permissions", "menus"] as TabType[]).map(tab => (
                 <button key={tab} onClick={() => switchTab(tab)}
@@ -225,7 +221,6 @@ export default function RolesPage() {
                 </svg>
               </div>
             ) : activeTab === "permissions" ? (
-              /* Permissions tab */
               <div className="space-y-4">
                 {Object.entries(grouped).map(([module, perms]) => (
                   <div key={module} className="bg-white rounded-lg overflow-hidden" style={{ border: "1px solid #e4e7ed" }}>
@@ -263,7 +258,6 @@ export default function RolesPage() {
                 ))}
               </div>
             ) : (
-              /* Menus tab */
               <div>
                 <div className="space-y-4 mb-4">
                   {Object.entries(menuGrouped).map(([module, items]) => (

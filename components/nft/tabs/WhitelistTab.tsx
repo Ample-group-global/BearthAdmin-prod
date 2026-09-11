@@ -161,7 +161,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold" style={{ color: "#24315f" }}>Whitelist Management</h2>
@@ -178,7 +177,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
         </div>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Total Addresses", value: addresses.length.toLocaleString() },
@@ -193,9 +191,7 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
         ))}
       </div>
 
-      {/* Panel */}
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>
-        {/* Sub-tabs */}
         <div className="px-1 flex overflow-x-auto" style={{ borderBottom: "1px solid #e5e7eb" }}>
           {TABS.map((t) => (
             <button
@@ -209,7 +205,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
         </div>
 
         <div className="p-5">
-          {/* ── All Addresses ── */}
           {wlTab === "addresses" && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
@@ -306,7 +301,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
             </div>
           )}
 
-          {/* ── Add Single (Register Wallet) ── */}
           {wlTab === "add" && (
             <div className="max-w-md space-y-4">
               <div>
@@ -316,7 +310,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
                 </p>
               </div>
 
-              {/* User Type */}
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>User Type</label>
                 <select
@@ -330,7 +323,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
                 </select>
               </div>
 
-              {/* Wallet Address */}
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>Wallet Address <span style={{ color: "#dc2626" }}>*</span></label>
                 <input value={newAddr} onChange={(e) => setNewAddr(e.target.value)}
@@ -339,7 +331,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
                   style={inputStyle} />
               </div>
 
-              {/* First Name */}
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>First Name <span style={{ color: "#dc2626" }}>*</span></label>
                 <input value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)}
@@ -348,7 +339,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
                   style={inputStyle} />
               </div>
 
-              {/* Last Name + Email in a row */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>Last Name</label>
@@ -379,7 +369,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
             </div>
           )}
 
-          {/* ── Bulk Import ── */}
           {wlTab === "bulk" && (
             <div className="max-w-lg space-y-4">
               <h3 className="text-sm font-semibold" style={{ color: "#24315f" }}>Bulk Import</h3>
@@ -401,7 +390,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
             </div>
           )}
 
-          {/* ── Merkle Root ── */}
           {wlTab === "merkle" && (
             <div className="max-w-lg space-y-5">
               <div className="p-4 rounded-xl" style={{ background: "#f9fafb", border: "1px solid #e5e7eb" }}>
@@ -455,7 +443,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
             </div>
           )}
 
-          {/* ── Test Address ── */}
           {wlTab === "test" && (
             <div className="max-w-md space-y-4">
               <h3 className="text-sm font-semibold" style={{ color: "#24315f" }}>Test Address Membership</h3>
@@ -501,7 +488,6 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
             </div>
           )}
 
-          {/* ── Export ── */}
           {wlTab === "export" && (
             <div className="space-y-4">
               <h3 className="text-sm font-semibold" style={{ color: "#24315f" }}>Export Whitelist</h3>

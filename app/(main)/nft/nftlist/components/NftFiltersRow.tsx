@@ -1,9 +1,5 @@
 "use client";
 
-// ─── NftFiltersRow ────────────────────────────────────────────────────────────
-// The full filter row for the NFT Records tab: search, wave, artwork state,
-// mint type, rarity tier, date range, and a clear-all button.
-
 export interface WaveOption {
   waveNumber: number;
   name: string;
@@ -53,7 +49,6 @@ export default function NftFiltersRow({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {/* Search */}
       <div className="relative flex-1 min-w-48 max-w-64">
         <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#9bafc5" }}
           fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -65,7 +60,6 @@ export default function NftFiltersRow({
           style={{ border: "1px solid #e5e7eb", color: "#111827" }} />
       </div>
 
-      {/* Wave dropdown */}
       <select value={waveFilter}
         onChange={e => onWaveChange(e.target.value)}
         className="py-2 px-3 rounded-xl text-sm bg-white outline-none"
@@ -78,7 +72,6 @@ export default function NftFiltersRow({
         ))}
       </select>
 
-      {/* Artwork state — matches NFT lifecycle badge language */}
       <select value={revealFilter}
         onChange={e => onRevealChange(e.target.value)}
         className="py-2 px-3 rounded-xl text-sm bg-white outline-none"
@@ -90,7 +83,6 @@ export default function NftFiltersRow({
         <option value="treasury_wallet">🏛 Treasury Wallet</option>
       </select>
 
-      {/* Mint type */}
       <select value={mintTypeFilter}
         onChange={e => onMintTypeChange(e.target.value)}
         className="py-2 px-3 rounded-xl text-sm bg-white outline-none"
@@ -101,7 +93,6 @@ export default function NftFiltersRow({
         <option value="treasury">Treasury</option>
       </select>
 
-      {/* Rarity tier */}
       <select value={rarityTierFilter}
         onChange={e => onRarityTierChange(e.target.value)}
         className="py-2 px-3 rounded-xl text-sm bg-white outline-none"
@@ -113,7 +104,6 @@ export default function NftFiltersRow({
         <option value="common">Common</option>
       </select>
 
-      {/* Date range */}
       <input type="date" value={mintedFrom}
         onChange={e => onMintedFromChange(e.target.value)}
         className="py-2 px-3 rounded-xl text-sm bg-white outline-none"
@@ -125,7 +115,6 @@ export default function NftFiltersRow({
         style={{ border: "1px solid #e5e7eb", color: mintedTo ? "#111827" : "#9bafc5" }}
         title="Minted to date" />
 
-      {/* Clear all */}
       {hasActiveFilter && (
         <button onClick={onClear}
           className="px-3 py-2 rounded-xl text-xs font-semibold"

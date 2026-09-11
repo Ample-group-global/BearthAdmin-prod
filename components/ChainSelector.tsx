@@ -72,7 +72,6 @@ export function ChainSelector() {
       const msg = err?.message ?? String(e);
       const isRejection = err?.code === 4001 || msg.toLowerCase().includes("user rejected") || msg.toLowerCase().includes("cancelled");
       if (!isRejection) {
-        // Only log genuine failures, not user-initiated cancellations
         console.warn("Chain switch failed:", msg);
       }
       setError(isRejection ? "Cancelled" : `Could not switch to ${config.name}`);
@@ -83,7 +82,6 @@ export function ChainSelector() {
 
   return (
     <div ref={ref} className="relative">
-      {/* Trigger button */}
       <button
         onClick={() => { setOpen(!open); setError(""); }}
         disabled={switching}
@@ -102,7 +100,6 @@ export function ChainSelector() {
         </svg>
       </button>
 
-      {/* Dropdown */}
       {open && (
         <div
           className="absolute right-0 mt-1.5 w-52 rounded-xl shadow-lg z-50 overflow-hidden py-1"

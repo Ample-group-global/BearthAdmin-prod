@@ -1,9 +1,5 @@
 "use client";
 
-// ─── TestnetResetConfirm ──────────────────────────────────────────────────────
-// Fixed-position overlay confirmation dialog shown before wiping all testnet
-// NFT records. Only mounted when showResetConfirm is true in the parent.
-
 interface TestnetResetConfirmProps {
   onConfirm: () => void;
   onCancel: () => void;

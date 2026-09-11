@@ -2,9 +2,6 @@
 
 import { useState } from "react";
 
-// NFT image with 4 states: revealed (IPFS), blind-box URI, blind-box fallback, broken-image fallback.
-// Moved from records/page.tsx to be reusable across any page showing NFT thumbnails.
-
 const IPFS_GATEWAY = "https://amgbearth.myfilebase.com/ipfs";
 
 interface NftImageProps {

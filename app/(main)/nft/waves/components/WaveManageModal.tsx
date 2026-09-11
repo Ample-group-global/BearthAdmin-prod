@@ -135,7 +135,6 @@ export default function WaveManageModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.45)" }}>
       <div className={`ba-modal-manage shadow-xl flex flex-col transition-all duration-200${manageMaximized ? " maximized" : ""}`}>
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: "1px solid #e5e7eb" }}>
           <div>
             <div className="flex items-center gap-2">
@@ -175,7 +174,6 @@ export default function WaveManageModal({
           </div>
         </div>
 
-        {/* Single scrollable body */}
         <div className="px-6 py-4 overflow-y-auto flex-1 space-y-4">
           {saveError && (
             <div className="p-3 rounded-lg text-sm" style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }}>
@@ -183,7 +181,6 @@ export default function WaveManageModal({
             </div>
           )}
 
-          {/* Wave Quantity — read-only */}
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
             style={{ background: "#f9fafb", border: "1px solid #e5e7eb" }}>
             <svg className="w-4 h-4 flex-shrink-0" style={{ color: "#9bafc5" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -200,7 +197,6 @@ export default function WaveManageModal({
             </div>
           </div>
 
-          {/* Price + Sale Method */}
           {editWave.waveNumber === 1 ? (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
               style={{ background: "rgba(65,175,235,0.07)", border: "1px solid rgba(65,175,235,0.2)" }}>
@@ -248,7 +244,6 @@ export default function WaveManageModal({
             </div>
           )}
 
-          {/* Emergency Pause */}
           {!editWave.waveClosed && <div className="flex items-center justify-between p-3 rounded-xl"
             style={{
               background: form.status === PAUSE_TOGGLE ? "rgba(217,119,6,0.07)" : "#f9fafb",
@@ -286,7 +281,6 @@ export default function WaveManageModal({
             </label>
           </div>}
 
-          {/* Schedule */}
           {(() => {
             const schedLocked = editWave.waveClosed ||
               editWave.status === "active" ||
@@ -332,7 +326,6 @@ export default function WaveManageModal({
             );
           })()}
 
-          {/* On-Chain Actions banner */}
           <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
             style={{ background: "rgba(217,119,6,0.07)", border: "1px solid rgba(217,119,6,0.25)" }}>
             <svg className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#d97706" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -372,7 +365,6 @@ export default function WaveManageModal({
             </div>
           )}
 
-          {/* DB ↔ On-Chain price sync indicator */}
           {chainOnChain && editWave.waveNumber > 1 && (() => {
             const onChainPrice = parseFloat(chainOnChain.price);
             const dbPrice = editWave.defaultPriceEth;
@@ -416,7 +408,6 @@ export default function WaveManageModal({
           {chainTx && <SharedTxBanner txHash={chainTx} />}
           {chainError && <ErrBanner msg={chainError} onDismiss={() => setChainError(null)} />}
 
-          {/* Push Schedule On-Chain — only before wave has started */}
           {(() => {
             const waveStarted = editWave.waveClosed || editWave.status === "active";
             return !waveStarted ? (
@@ -453,7 +444,6 @@ export default function WaveManageModal({
             ) : null;
           })()}
 
-          {/* Set Price On-Chain */}
           {editWave.waveNumber > 1 && !editWave.waveClosed && (
             editWave.priceLocked ? (
               <div className="px-4 py-3 rounded-xl text-xs" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }}>
@@ -484,7 +474,6 @@ export default function WaveManageModal({
             )
           )}
 
-          {/* Unsold NFT Strategy */}
           <div>
             <label className="text-xs font-semibold mb-2 block" style={{ color: "#374151" }}>
               Unsold NFT Strategy
@@ -547,7 +536,6 @@ export default function WaveManageModal({
             )}
           </div>
 
-          {/* Whitelist Restriction */}
           {editWave.waveNumber > 1 && (
             <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ border: "1px solid #e5e7eb", background: "#f9fafb" }}>
               <div>
@@ -566,7 +554,6 @@ export default function WaveManageModal({
             </div>
           )}
 
-          {/* ── Reveal Strategy ── */}
           <div>
             <label className="text-xs font-semibold mb-2 block" style={{ color: "#374151" }}>
               Reveal Strategy
@@ -575,7 +562,6 @@ export default function WaveManageModal({
               Controls whether reveal fires automatically at the scheduled time or only when you manually trigger it.
             </p>
             <div className="flex gap-2">
-              {/* Auto Reveal */}
               <button
                 disabled={!!editWave.waveRevealed || !!editWave.waveRevealTriggered}
                 onClick={() => !editWave.waveRevealed && !editWave.waveRevealTriggered && setForm(f => ({ ...f, revealStrategy: "auto" }))}
@@ -599,7 +585,6 @@ export default function WaveManageModal({
                   System automatically reveals this wave at the scheduled reveal date. No admin action needed.
                 </p>
               </button>
-              {/* Manual Reveal */}
               <button
                 disabled={!!editWave.waveRevealed || !!editWave.waveRevealTriggered}
                 onClick={() => !editWave.waveRevealed && !editWave.waveRevealTriggered && setForm(f => ({ ...f, revealStrategy: "manual" }))}
@@ -631,7 +616,6 @@ export default function WaveManageModal({
             )}
           </div>
 
-          {/* ── Reveal Status (contextual, below strategy) ── */}
           {editWave.waveRevealed ? (
             <div className="px-4 py-3 rounded-xl text-xs flex items-center gap-2"
               style={{ background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.3)", color: "#16a34a" }}>
@@ -661,7 +645,6 @@ export default function WaveManageModal({
             </div>
           )}
 
-          {/* ── Reveal Metadata URI (required for Auto Reveal) ── */}
           {form.revealStrategy === "auto" && !editWave.waveRevealed && !editWave.waveRevealTriggered && (
             <div className="space-y-1.5">
               <label className="text-xs font-semibold block" style={{ color: "#374151" }}>
@@ -687,7 +670,6 @@ export default function WaveManageModal({
             </div>
           )}
 
-          {/* ── Per-Wave Purchase Limit ── */}
           {editWave.waveNumber > 1 && (
             <div className="space-y-3 p-4 rounded-xl" style={{ background: "#f9fafb", border: "1px solid #e5e7eb" }}>
               <div className="flex items-start justify-between gap-3">
@@ -744,7 +726,6 @@ export default function WaveManageModal({
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-3 px-6 py-4 flex-shrink-0" style={{ borderTop: "1px solid #e5e7eb" }}>
           <button onClick={closeManage} className="px-4 py-2 text-sm font-medium rounded-lg"
             style={{ border: "1px solid #e5e7eb", color: "#6b7280" }}>Close</button>

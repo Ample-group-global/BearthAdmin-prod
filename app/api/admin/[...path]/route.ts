@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { proxyToApi } from "@/lib/api-proxy";
 
-// Catch-all proxy: /api/admin/** → BearthApi /api/admin/**
 async function handler(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const apiPath = `/api/admin/${path.join("/")}`;

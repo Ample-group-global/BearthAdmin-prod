@@ -30,7 +30,6 @@ export default function RoyaltyTab({ collectionId }: { collectionId: string }) {
   const [loading, setLoading]     = useState(true);
   const [error,   setError]       = useState<string | null>(null);
 
-  // Royalty form
   const [feePct,        setFeePct]        = useState("");
   const [receiver,      setReceiver]      = useState("");
   const [enforced,      setEnforced]      = useState(true);
@@ -38,13 +37,11 @@ export default function RoyaltyTab({ collectionId }: { collectionId: string }) {
   const [royaltyError,  setRoyaltyError]  = useState<string | null>(null);
   const [royaltyTx,     setRoyaltyTx]     = useState<string | null>(null);
 
-  // Transfer Validator
   const [validatorAddr,    setValidatorAddr]    = useState("");
   const [savingValidator,  setSavingValidator]  = useState(false);
   const [validatorError,   setValidatorError]   = useState<string | null>(null);
   const [validatorTx,      setValidatorTx]      = useState<string | null>(null);
 
-  // Marketplace form
   const [showAddMarket, setShowAddMarket] = useState(false);
   const [mktAddr,       setMktAddr]       = useState("");
   const [mktName,       setMktName]       = useState("");
@@ -97,7 +94,6 @@ export default function RoyaltyTab({ collectionId }: { collectionId: string }) {
     finally { setSavingRoyalty(false); }
   };
 
-  // DB-only — updates metadata flag in nft_collection_config, no on-chain call
   const handleToggleEnforcement = async (val: boolean) => {
     setEnforced(val);
     try {
@@ -182,7 +178,6 @@ export default function RoyaltyTab({ collectionId }: { collectionId: string }) {
 
       {error && <ErrBanner msg={error} />}
 
-      {/* ─── ERC2981 ROYALTY ────────────────────────────── */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-5" style={{ border: "1px solid #e5e7eb" }}>
         <div className="flex items-center justify-between">
           <div>
@@ -241,7 +236,6 @@ export default function RoyaltyTab({ collectionId }: { collectionId: string }) {
         </div>
       </div>
 
-      {/* ─── ENFORCEMENT FLAG (DB only) ─────────────────── */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4" style={{ border: "1px solid #e5e7eb" }}>
         <div>
           <h2 className="text-sm font-bold" style={{ color: "#24315f" }}>Enforcement Status</h2>
@@ -275,7 +269,6 @@ export default function RoyaltyTab({ collectionId }: { collectionId: string }) {
         )}
       </div>
 
-      {/* ─── ERC721C TRANSFER VALIDATOR ─────────────────── */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4" style={{ border: "1px solid #e5e7eb" }}>
         <div>
           <h2 className="text-sm font-bold" style={{ color: "#24315f" }}>Transfer Validator (On-Chain Enforcement)</h2>
@@ -304,7 +297,6 @@ export default function RoyaltyTab({ collectionId }: { collectionId: string }) {
         </div>
       </div>
 
-      {/* ─── APPROVED MARKETPLACES (DB metadata) ────────── */}
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid #e5e7eb" }}>
           <div>
@@ -378,7 +370,6 @@ export default function RoyaltyTab({ collectionId }: { collectionId: string }) {
         </div>
       </div>
 
-      {/* ─── Add Marketplace Modal ───────────────────────── */}
       {showAddMarket && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.45)" }}>
           <div className="bg-white rounded-2xl shadow-xl flex flex-col"

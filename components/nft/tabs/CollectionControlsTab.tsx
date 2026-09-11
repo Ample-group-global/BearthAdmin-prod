@@ -152,12 +152,10 @@ export default function CollectionControlsTab({ collectionId, onChain, config, e
       {tx      && <TxBanner  txHash={tx}   onDismiss={() => setTx(null)} />}
       {opError && <ErrBanner msg={opError}  onDismiss={() => setOpError(null)} />}
 
-      {/* ─── CONTENT ────────────────────────────────────── */}
       <section>
         <GroupLabel>Content</GroupLabel>
         <div className="space-y-4">
 
-          {/* Blind Box URI */}
           <SectionCard
             title="Blind Box URI"
             subtitle="Placeholder metadata shown to holders before the collection is revealed. All tokens show this URI while blind.">
@@ -185,7 +183,6 @@ export default function CollectionControlsTab({ collectionId, onChain, config, e
             </div>
           </SectionCard>
 
-          {/* Treasury Wallet — gated behind a 48h Timelock, two-step flow */}
           <SectionCard title="Treasury Wallet" subtitle="ETH from mint sales is withdrawable to this address. Changing it goes through BearthTimelock's 48-hour governance delay — schedule now, execute once the delay passes.">
             <div className="space-y-3">
               <p className="text-xs" style={{ color: "#9bafc5" }}>
@@ -231,7 +228,6 @@ export default function CollectionControlsTab({ collectionId, onChain, config, e
         </div>
       </section>
 
-      {/* ─── EMERGENCY CONTROLS ─────────────────────────── */}
       <section>
         <GroupLabel>Emergency Controls</GroupLabel>
         <div className="bg-white rounded-2xl shadow-sm p-5" style={{ border: "1px solid #fecaca" }}>
@@ -259,8 +255,6 @@ export default function CollectionControlsTab({ collectionId, onChain, config, e
             </button>
           </div>
 
-          {/* Block / Unblock Wallet — pre-mainnet checklist item, contractBlockAccount()
-              already existed in the service layer with no route/UI anywhere until now. */}
           <div className="mt-4 pt-4" style={{ borderTop: "1px solid #fecaca" }}>
             <p className="text-xs font-semibold mb-2" style={{ color: "#dc2626" }}>Block / Unblock Wallet</p>
             <div className="flex flex-wrap gap-2">
@@ -281,7 +275,6 @@ export default function CollectionControlsTab({ collectionId, onChain, config, e
         </div>
       </section>
 
-      {/* ─── AUDIT LOG ──────────────────────────────────── */}
       <section>
         <GroupLabel>Audit Log</GroupLabel>
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>

@@ -1,8 +1,5 @@
 "use client";
 
-// Reusable modal header with title, optional maximize toggle, and close button.
-// Used by WaveManageModal and NftHistoryModal.
-
 interface ModalHeaderProps {
   title: string;
   subtitle?: string;
@@ -36,7 +33,6 @@ export default function ModalHeader({
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Maximize / restore */}
         <button
           onClick={onMaximize}
           className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
@@ -56,7 +52,6 @@ export default function ModalHeader({
           )}
         </button>
 
-        {/* Close */}
         <button
           onClick={onClose}
           className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"

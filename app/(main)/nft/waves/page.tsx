@@ -25,10 +25,9 @@ function waveState(w: WaveSchedule): "revealed" | "ready_reveal" | "reveal_sched
     if ((w.sold_count ?? 0) === 0) return "ended_zero";
     return "ended";
   }
-  // Time-window fallback: scheduler may not have fired yet (up to 30s lag)
   if (w.scheduled_start && new Date(w.scheduled_start).getTime() <= now) {
     if (!w.scheduled_end || new Date(w.scheduled_end).getTime() > now) return "active";
-    return "ended"; // both start and end passed but DB flags not yet updated
+    return "ended";
   }
   if (w.scheduled_start) return "upcoming";
   return "not_scheduled";
@@ -43,7 +42,6 @@ function deriveWaveDisplayStatus(w: Wave): string {
     return "closed";
   }
   if (w.status === "active" && w.scheduledEnd && new Date(w.scheduledEnd).getTime() < now) return "ended";
-  // Time-based fallback: scheduled_start passed but DB not yet updated (auto-trigger lag)
   if (w.scheduledStart && new Date(w.scheduledStart).getTime() <= now) {
     if (!w.scheduledEnd || new Date(w.scheduledEnd).getTime() > now) return "active";
     return "ended";
@@ -60,10 +58,6 @@ export default function WavesPage() {
 
   const [activeTab, setActiveTab] = useState<"waves" | "collaborations">("waves");
 
-  // Waves are now per-collection (mirrors NFT List's collection_id split) --
-  // unlike NFT List there's no meaningful "all collections combined" view
-  // here (21 waves from 3 collections can't be shown as one merged table),
-  // so exactly one collection must always be selected.
   const [collections, setCollections] = useState<Array<{ id: string; name: string }>>([]);
   const [collectionId, setCollectionId] = useState("");
 
@@ -74,7 +68,6 @@ export default function WavesPage() {
   const [wavePage, setWavePage] = useState(1);
   const WAVES_PER_PAGE = 10;
 
-  // DB edit modal
   const [editWave, setEditWave] = useState<Wave | null>(null);
   const [manageMaximized, setManageMaximized] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -85,7 +78,6 @@ export default function WavesPage() {
     revealStrategy: "auto", whitelistRequired: true, revealUri: "",
   });
 
-  // On-chain action modal
   const [chainWave, setChainWave] = useState<Wave | null>(null);
   const [chainOnChain, setChainOnChain] = useState<OnChainWaveInfo | null>(null);
   const [chainLoading, setChainLoading] = useState(false);
@@ -93,7 +85,6 @@ export default function WavesPage() {
   const [chainError, setChainError] = useState<string | null>(null);
   const [chainTx, setChainTx] = useState<string | null>(null);
 
-  // Chain form fields
   const [chainPrice, setChainPrice] = useState("");
   const [purchaseLimitInput, setPurchaseLimitInput] = useState("");
   const [treasuryMoveWave, setTreasuryMoveWave] = useState<Wave | null>(null);
@@ -145,7 +136,6 @@ export default function WavesPage() {
       const updated: Wave[] = d.waves ?? [];
       setWatchUpdated(new Date());
 
-      // detect waves whose reveal date has passed but are not yet revealed
       const now = Date.now();
       const readyToReveal = updated.filter(w =>
         w.revealScheduledAt && new Date(w.revealScheduledAt).getTime() <= now && !w.waveRevealed
@@ -155,20 +145,16 @@ export default function WavesPage() {
         setWaveWatchAlert(`${readyToReveal.length} wave${readyToReveal.length > 1 ? "s" : ""} ready to reveal: ${readyToReveal.map(w => `Wave ${w.waveNumber}`).join(", ")}`);
       }
 
-      // silently refresh wave list and progress stepper together
       setWaves(updated);
       if (sr.ok) {
         const sd = await sr.json();
         setRevealWaves(sd.waves ?? []);
       }
-    } catch { /* silent */ }
+    } catch { }
   }, [collectionId]);
 
   useInterval(silentWavePoll, 30_000);
 
-  // Precision event timer: fire silentWavePoll at the exact millisecond each
-  // scheduled event (start / end / reveal) arrives so the UI transitions
-  // immediately without waiting for the next 30-second poll tick.
   useEffect(() => {
     const now = Date.now();
     const times: number[] = [];
@@ -203,18 +189,7 @@ export default function WavesPage() {
     }
   }, [collectionId]);
 
-  // Collection dropdown: /api/master's list is deliberately scoped to
-  // collections that already have synced nft_records -- correct here too,
-  // not just for NFT List: a collection with nothing generated/synced yet
-  // has no real NFTs to schedule a sale for, so it should NOT show up in
-  // Waves either. The actual bug was that this fetch resolving to zero
-  // collections left collectionsLoading/loading stuck true forever with no
-  // empty-state message -- see the render below, which now shows one.
   useEffect(() => {
-    // Deep-link from the Dashboard's per-collection cards -- handed off via a
-    // short-lived cookie (not a ?collectionId=<uuid> query param, so the raw
-    // id never shows up in the address bar). One-shot: consumed then cleared
-    // immediately so it doesn't keep overriding manual selection later.
     fetch("/api/session/waves-collection", { credentials: "include" })
       .then(r => r.json())
       .then(d => {
@@ -243,7 +218,6 @@ export default function WavesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Once a collection is selected (default or user-picked), (re)load everything for it.
   useEffect(() => {
     if (!collectionId) return;
     loadWaves();
@@ -410,7 +384,6 @@ export default function WavesPage() {
 
   const totalNfts = waves.reduce((s, w) => s + (w.quantity ?? 0), 0);
   const activeWave = waves.find(w => deriveWaveDisplayStatus(w) === "active");
-  // Waves whose minting period is over: closed, reveal-scheduled, ready-to-reveal, revealed, or transitional ended
   const completedCount = waves.filter(w =>
     ["revealed", "closed", "reveal_scheduled", "ready_reveal", "ended"].includes(deriveWaveDisplayStatus(w))
   ).length;
@@ -462,13 +435,6 @@ export default function WavesPage() {
         </button>
       </div>
 
-      {/* Collections only qualify here once they have synced nft_records
-          (same rule /api/master already applies for NFT List, correct here
-          too — a collection with nothing generated/synced yet has no real
-          NFTs to schedule a sale for). Previously this state was a
-          perpetual "Loading..." spinner with no explanation once the
-          collections fetch resolved to zero results — !loading here means
-          the fetch actually completed, it just found nothing yet. */}
       {!loading && collections.length === 0 && (
         <div className="flex flex-col items-center gap-2 px-6 py-14 rounded-xl text-center"
           style={{ background: "#f8fafc", border: "1px solid #e5e7eb" }}>
@@ -484,9 +450,6 @@ export default function WavesPage() {
         </div>
       )}
 
-      {/* Collection selector — waves are per-collection (each with its own
-          independent 7-wave schedule), unlike NFT List there's no "all
-          combined" view here, so exactly one must always be selected. */}
       {collections.length > 0 && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl flex-wrap"
           style={{ background: "#f8fafc", border: "1px solid #e5e7eb" }}>
@@ -508,10 +471,8 @@ export default function WavesPage() {
 
       <div className="ba-tabs" style={{ borderBottom: "1px solid #e5e7eb" }}>
         <div className="flex gap-0">
-          {/* Hidden: "packs" (Mystery Packs — no on-chain mint in reveal flow, design gap pending) */}
           {([
             { key: "waves", label: "Waves" },
-            /* Hidden for now (work in progress): { key: "collaborations", label: "Collaborations" } */
           ] as const).map(tab => (
             <button
               key={tab.key}
@@ -541,7 +502,6 @@ export default function WavesPage() {
 
       {activeTab === "waves" && collections.length > 0 && (
         <>
-          {/* Strategy banner */}
           {strategyHighlight && (
             <div ref={highlightRef} className="flex items-start gap-3 px-4 py-3 rounded-xl text-sm"
               style={{ background: "rgba(65,175,235,0.08)", border: "1px solid rgba(65,175,235,0.3)" }}>
@@ -561,7 +521,6 @@ export default function WavesPage() {
             </div>
           )}
 
-          {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: "Total Waves", value: String(waves.length), color: "#41afeb" },
@@ -579,12 +538,10 @@ export default function WavesPage() {
           {error && <ErrBanner msg={error} onDismiss={() => setError(null)} />}
           {revealErr && <ErrBanner msg={revealErr} onDismiss={() => setRevealErr(null)} />}
 
-          {/* Collection Reveal Progress */}
           {revealWaves.length > 0 && (
             <WaveProgressStepper revealWaves={revealWaves} stateMeta={STATE_META} />
           )}
 
-          {/* Ready-to-reveal alert */}
           {readyCount > 0 && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
               style={{ background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.3)" }}>
@@ -606,7 +563,6 @@ export default function WavesPage() {
             </div>
           )}
 
-          {/* Next upcoming action */}
           {!readyCount && nextAction && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
               style={{ background: "rgba(65,175,235,0.06)", border: "1px solid rgba(65,175,235,0.2)" }}>
@@ -620,7 +576,6 @@ export default function WavesPage() {
             </div>
           )}
 
-          {/* Waves Table */}
           <WavesTable
             waves={waves}
             loading={loading}
@@ -644,7 +599,6 @@ export default function WavesPage() {
 
       {activeTab === "collaborations" && <CollaborationsTab />}
 
-      {/* Reveal Date Editor Modal */}
       {scheduleEditWave && (
         <RevealScheduleEditModal
           wave={scheduleEditWave}
@@ -675,7 +629,6 @@ export default function WavesPage() {
       )}
 
 
-      {/* Treasury Move Modal */}
       {treasuryMoveWave && (
         <TreasuryMoveModal
           wave={treasuryMoveWave}
@@ -697,7 +650,6 @@ export default function WavesPage() {
         />
       )}
 
-      {/* Manage Modal */}
       {editWave && (
         <WaveManageModal
           wave={editWave}

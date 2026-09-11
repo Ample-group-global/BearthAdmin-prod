@@ -5,9 +5,6 @@ export const dynamic = 'force-dynamic';
 
 const API_BASE = process.env.BEARTH_API_URL!;
 
-// Cleans up a layer's stale leftovers once all of its chunked uploads have
-// landed — see BearthApi's /api/nft-gen/layers/upload/finalize for why this
-// is a separate call from the upload itself.
 export async function POST(request: NextRequest) {
   const token = getSessionToken(request);
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

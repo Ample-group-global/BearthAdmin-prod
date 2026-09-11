@@ -1,5 +1,3 @@
-// Shared constants for NFT admin pages
-
 export const IPFS_GATEWAY = "https://ipfs.io/ipfs/";
 
 export const PAGE_SIZE = 20;
@@ -13,8 +11,6 @@ export const RARITY_TIERS = [
 
 export const PHASE_NAMES = ["Free Mint", "Paid Mint"] as const;
 
-// Maps DB/contract phase strings to display labels. Only 2 phases exist (Free/Paid).
-// "Revealed" is a wave status, not a phase — falls through to raw value via ?? fallback.
 export const PHASE_DISPLAY: Record<string, string> = {
   Whitelist: "Free Mint",
   PaidMint:  "Paid Mint",
@@ -30,4 +26,4 @@ export const ETH_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 export const BYTES32_RE = /^0x[0-9a-fA-F]{64}$/;
 export const MERKLE_ROOT_RE = /^0x[0-9a-fA-F]{64}$/;
 
-export const MAX_ROYALTY_BPS = 1000; // 10% maximum royalty
+export const MAX_ROYALTY_BPS = 1000;

@@ -76,14 +76,12 @@ export async function fetchMintedEvents(chainId: number): Promise<{
       normalMaxPerWallet: Number(normalMax),
     };
   } catch {
-    // continue without contract state
   }
 
   const fromBlock = config.deploymentBlock ?? 0;
   let rawEvents: ethers.EventLog[] = [];
   let fetchError: string | null = null;
   try {
-    // Transfer(from=0x0) is the standard ERC721 mint event
     const filter = contract.filters.Transfer(ethers.ZeroAddress, null, null);
     const latest = await provider.getBlockNumber();
     const CHUNK = 2000;
@@ -112,10 +110,8 @@ export async function fetchMintedEvents(chainId: number): Promise<{
 
   const isRevealed = contractState.revealCount > 0;
 
-  // Transfer args: (from, to, tokenId)
   const tokenIds = rawEvents.map((ev) => Number((ev.args as unknown as [string, string, bigint])[2]));
 
-  // Batch: get wave for each token via tokenWave()
   const waveMap = new Map<number, number>();
   await Promise.allSettled(
     tokenIds.map(async (tokenId) => {
@@ -126,7 +122,6 @@ export async function fetchMintedEvents(chainId: number): Promise<{
     })
   );
 
-  // Batch: get timestamps from unique blocks
   const uniqueBlocks = [...new Set(rawEvents.map((ev) => ev.blockNumber))];
   const blockTimestamps = new Map<number, number>();
   await Promise.allSettled(

@@ -1,8 +1,5 @@
 "use client";
 
-// Cancel + primary-action button pair used in every modal footer.
-// confirmVariant="danger" turns the confirm button red (used in irreversible actions).
-
 type ConfirmVariant = "primary" | "danger" | "success";
 
 const CONFIRM_COLORS: Record<ConfirmVariant, { active: string; disabled: string }> = {

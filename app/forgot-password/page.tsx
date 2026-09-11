@@ -34,7 +34,6 @@ export default function ForgotPasswordPage() {
     <div className="login-bg">
       <div className="w-full max-w-[360px] sm:max-w-md">
 
-        {/* ── Logo ── */}
         <div className="flex flex-col items-center mt-8 sm:mt-10 mb-5 sm:mb-7">
           <div
             className="mb-3 rounded-[18px] shadow-xl"
@@ -50,7 +49,6 @@ export default function ForgotPasswordPage() {
           </p>
         </div>
 
-        {/* ── Card ── */}
         <div
           className="rounded-2xl overflow-hidden"
           style={{
@@ -63,7 +61,6 @@ export default function ForgotPasswordPage() {
           <div className="px-6 py-6 sm:px-8 sm:py-7">
 
             {sent ? (
-              /* ── Success state ── */
               <div className="flex flex-col items-center text-center py-2">
                 <div
                   className="w-12 h-12 rounded-full flex items-center justify-center mb-4"
@@ -93,7 +90,6 @@ export default function ForgotPasswordPage() {
                 </div>
               </div>
             ) : (
-              /* ── Form state ── */
               <>
                 <div className="mb-4">
                   <h2 className="text-sm font-bold mb-1" style={{ color: "#24315f" }}>Forgot your password?</h2>

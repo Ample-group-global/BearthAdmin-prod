@@ -151,14 +151,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Active check: exact match for paths that are prefixes of other menu items
   const isActive = (href: string) => {
     if (pathname === href) return true;
     const isParentOfOther = ctx.menus.some(m => m.href !== href && m.href.startsWith(href + "/"));
     return !isParentOfOther && pathname.startsWith(href + "/");
   };
 
-  // Derive ordered section list from sorted items (first appearance of each module)
   const sections: string[] = [];
   const seen = new Set<string>();
   for (const item of ctx.menus) {
@@ -172,7 +170,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen" style={{ background: "#f0f2f7", fontFamily: "'hoss-round', 'Figtree', system-ui, sans-serif" }}>
 
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 md:hidden"
@@ -181,7 +178,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`
           ba-sidebar
@@ -192,7 +188,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ${collapsed ? "ba-sidebar-collapsed" : "ba-sidebar-full"}
         `}
       >
-        {/* Brand */}
         {collapsed ? (
           <div className="flex-shrink-0 flex items-center justify-center" style={{ height: "44px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
             <button
@@ -224,7 +219,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        {/* Nav — all sections from DB */}
         <nav className="flex-1 py-2 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none" }}>
           {sections.map((mod, idx) => {
             const items = ctx.menus.filter(i => i.module === mod);
@@ -280,7 +274,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         </nav>
 
-        {/* Sign out */}
         <div className="px-1.5 py-2 flex-shrink-0" style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
           <div className="relative group">
             <button
@@ -304,14 +297,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <header
           className="flex-shrink-0 flex items-center justify-between px-3 sm:px-5 bg-white"
           style={{ height: "44px", borderBottom: "1px solid #e4e7ed", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
         >
           <div className="flex items-center gap-2 min-w-0">
-            {/* Hamburger — mobile only */}
             <button
               className="md:hidden flex-shrink-0 p-1.5 rounded-lg"
               onClick={() => setMobileOpen(o => !o)}

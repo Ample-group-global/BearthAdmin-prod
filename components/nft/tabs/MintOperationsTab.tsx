@@ -57,18 +57,14 @@ export default function MintOperationsTab({ collectionId, onChain, config, onRef
   const [opError, setOpError] = useState<string | null>(null);
   const [opOk,    setOpOk]    = useState<string | null>(null);
 
-  // Purchase limits
   const [limitEnabled, setLimitEnabled] = useState(config?.purchase_limit_enabled ?? true);
   const [maxPerWallet, setMaxPerWallet] = useState(String(config?.normal_max_per_wallet ?? 5));
 
-  // SBT
   const [sbtEnabled, setSbtEnabled] = useState(config?.sbt_enabled ?? false);
 
-  // Treasury reserve mint
   const [mintTo,  setMintTo]  = useState("");
   const [mintQty, setMintQty] = useState("1");
 
-  // ── Op helper ──
   const doOp = async (opName: string, fn: () => Promise<Response>, okMsg?: string) => {
     setSaving(opName); setOpError(null); setTx(null); setOpOk(null);
     try {
@@ -113,14 +109,10 @@ export default function MintOperationsTab({ collectionId, onChain, config, onRef
       {opError && <ErrBanner msg={opError}  onDismiss={() => setOpError(null)} />}
       {opOk   && <OkBanner  msg={opOk}     onDismiss={() => setOpOk(null)} />}
 
-      {/* Phase Management moved to NFT Waves page */}
-
-      {/* ─── ACCESS CONTROL ───────────────────────────── */}
       <section>
         <GroupLabel>Access Control</GroupLabel>
         <div className="space-y-4">
 
-          {/* Purchase Limits */}
           <SectionCard title="Purchase Limits" subtitle="Max NFTs a wallet can mint across all waves combined. Applies to all wallets equally.">
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 rounded-xl"
@@ -154,7 +146,6 @@ export default function MintOperationsTab({ collectionId, onChain, config, onRef
             </div>
           </SectionCard>
 
-          {/* SBT */}
           <SectionCard title="Soul Bound Token (SBT) Mode" subtitle="When enabled, minted NFTs cannot be transferred. Permanently bound to the minting wallet. Requires DEFAULT_ADMIN_ROLE.">
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 rounded-xl"
@@ -179,12 +170,10 @@ export default function MintOperationsTab({ collectionId, onChain, config, onRef
         </div>
       </section>
 
-      {/* ─── ADMIN TOOLS ────────────────────────────────── */}
       <section>
         <GroupLabel>Admin Tools</GroupLabel>
         <div className="space-y-4">
 
-          {/* Treasury Reserve Mint */}
           <SectionCard
             title="Treasury Reserve Mint"
             subtitle="Directly mint NFTs to any wallet (reserves, prizes, gifts, team allocation). Minted as wave-0 treasury tokens — does not count toward purchase limits or wave quotas.">

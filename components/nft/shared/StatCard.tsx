@@ -1,20 +1,15 @@
 "use client";
 
-// Shared stat/metric card used in both waves and records pages.
-// Simple mode  (waves): label + value, no icon/progress.
-// Rich mode (records): icon + subtitle + progress bar + percentage + onClick filter.
-
 interface StatCardProps {
   label: string;
   value: string | number;
   color?: string;
   small?: boolean;
-  // Rich mode (records-style)
   icon?: React.ReactNode;
   subtitle?: string;
   bgColor?: string;
-  progress?: number;   // 0–100
-  percentage?: number; // shown as "X% of collection"
+  progress?: number;
+  percentage?: number;
   onClick?: () => void;
 }
 
@@ -49,7 +44,6 @@ export default function StatCard({
           e.currentTarget.style.borderColor = "#e5e7eb";
         }}
       >
-        {/* Icon + label row */}
         <div className="flex items-center justify-between mb-3">
           <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#94a3b8" }}>
             {label}
@@ -64,17 +58,14 @@ export default function StatCard({
           )}
         </div>
 
-        {/* Number */}
         <p className="text-2xl font-extrabold leading-none mb-1" style={{ color }}>
           {typeof value === "number" ? value.toLocaleString() : value}
         </p>
 
-        {/* Subtitle */}
         {subtitle && (
           <p className="text-[10px] mb-3" style={{ color: "#94a3b8" }}>{subtitle}</p>
         )}
 
-        {/* Progress bar */}
         {progress !== undefined && (
           <>
             <div className="h-1 rounded-full overflow-hidden" style={{ background: "#f1f5f9" }}>
@@ -94,7 +85,6 @@ export default function StatCard({
     );
   }
 
-  // Simple mode (waves-style)
   return (
     <div className="bg-white rounded-xl p-4 shadow-sm" style={{ border: "1px solid #e5e7eb" }}>
       <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "#9bafc5" }}>

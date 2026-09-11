@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
 interface WaveSchedule {
   wave_number: number;
   wave_name: string;
@@ -21,14 +19,10 @@ interface WaveSchedule {
   quantity: number;
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
-
 function fmtFull(dt: string | null): string {
   if (!dt) return "—";
   return new Date(dt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
-
-// ─── WaveRevealModal ───────────────────────────────────────────────────────────
 
 export default function WaveRevealModal({
   wave,
@@ -42,10 +36,6 @@ export default function WaveRevealModal({
   onSuccess: (txHash: string) => void;
 }) {
   const [uri, setUri] = useState(wave.wave_reveal_uri ?? "");
-  // If a reveal URI is already saved in the DB, it was generated from the
-  // real pinned export (see project-reveal-pipeline-missing-folder-cid-2026-09-10) --
-  // lock it read-only so an admin can't fat-finger a bad URI into an
-  // irreversible on-chain reveal. Only editable when nothing is saved yet.
   const uriLocked = Boolean(wave.wave_reveal_uri);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -86,7 +76,6 @@ export default function WaveRevealModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg" style={{ border: "1px solid #e5e7eb" }}>
-        {/* Modal header */}
         <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid #e5e7eb" }}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(217,119,6,0.1)" }}>
@@ -108,7 +97,6 @@ export default function WaveRevealModal({
         </div>
 
         <div className="px-6 py-5 space-y-4">
-          {/* Warning banner */}
           <div className="flex gap-3 p-3 rounded-xl" style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)" }}>
             <svg className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: "#dc2626" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -120,7 +108,6 @@ export default function WaveRevealModal({
             </p>
           </div>
 
-          {/* Wave summary */}
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 rounded-xl" style={{ background: "#f9fafb", border: "1px solid #f3f4f6" }}>
               <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#9bafc5" }}>NFTs to Reveal</p>
@@ -132,7 +119,6 @@ export default function WaveRevealModal({
             </div>
           </div>
 
-          {/* IPFS URI input */}
           <div>
             <label className="block text-xs font-bold mb-1.5" style={{ color: "#374151" }}>
               Metadata Base URI <span style={{ color: "#dc2626" }}>*</span>
@@ -162,7 +148,6 @@ export default function WaveRevealModal({
             </p>
           </div>
 
-          {/* Confirmation checkbox */}
           <label className="flex items-start gap-2.5 cursor-pointer select-none">
             <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)}
               className="mt-0.5 w-4 h-4 rounded" style={{ accentColor: "#24315f", flexShrink: 0 }} />
@@ -179,7 +164,6 @@ export default function WaveRevealModal({
           )}
         </div>
 
-        {/* Actions */}
         <div className="flex items-center justify-end gap-3 px-6 py-4" style={{ borderTop: "1px solid #e5e7eb" }}>
           <button onClick={onClose} disabled={busy}
             className="px-4 py-2 text-sm font-medium rounded-lg"

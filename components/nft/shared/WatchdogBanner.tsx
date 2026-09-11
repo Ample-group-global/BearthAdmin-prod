@@ -1,9 +1,5 @@
 "use client";
 
-// Pulsing live-indicator + dismissable alert banner used by both waves and records pages.
-// variant="warn"  → amber (waves: new reveals ready)
-// variant="info"  → blue  (records: new mints detected)
-
 interface WatchdogBannerProps {
   alert: string | null;
   updatedAt: Date | null;

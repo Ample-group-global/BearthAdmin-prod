@@ -1,11 +1,5 @@
 // @ts-nocheck
 'use client';
-// Read-only "what's actually in Filebase" checker, opened by clicking a
-// collection's Supply number on the sync-status page. Deliberately separate
-// from the NFT List page (app/nft/nftlist) -- that page reads nft_records
-// (the DB), this reads the bucket directly, for verifying a fresh
-// generation run before anything gets synced to the DB at all. Infinite
-// scroll (no page-number pagination), full supply reachable by scrolling.
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface Props {
@@ -26,7 +20,7 @@ interface ItemMeta {
 }
 
 const BATCH = 48;
-const URL_BATCH = 100; // keys per presigned-urls call while scrolling
+const URL_BATCH = 100;
 
 export default function SupplyBrowseModal({ collectionName, supply, onClose }: Props) {
   const [bucketList, setBucketList] = useState<string[]>([]);
@@ -74,7 +68,6 @@ export default function SupplyBrowseModal({ collectionName, supply, onClose }: P
 
   useEffect(() => { if (bucket) loadImageList(bucket); }, [bucket, loadImageList]);
 
-  // Resolve presigned URLs + metadata for whatever numbers just became visible.
   useEffect(() => {
     if (!images || !bucket) return;
     const slice = images.slice(0, visibleCount).filter(e => !items[e.n]);
@@ -131,7 +124,6 @@ export default function SupplyBrowseModal({ collectionName, supply, onClose }: P
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images, visibleCount, bucket]);
 
-  // Infinite scroll — grow visibleCount as the sentinel comes into view.
   useEffect(() => {
     if (!sentinelRef.current || !images) return;
     const el = sentinelRef.current;

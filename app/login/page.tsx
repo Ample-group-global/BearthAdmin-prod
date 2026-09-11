@@ -56,7 +56,6 @@ export default function LoginPage() {
     <div className="login-bg">
       <div className="w-full max-w-[360px] sm:max-w-md">
 
-        {/* ── Logo ── */}
         <div className="flex flex-col items-center mb-5 sm:mb-7">
           <div
             className="mb-3 rounded-[18px] shadow-xl"
@@ -72,7 +71,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* ── Card ── */}
         <div
           className="rounded-2xl overflow-hidden"
           style={{
@@ -80,14 +78,12 @@ export default function LoginPage() {
             boxShadow: "0 24px 60px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.2)",
           }}
         >
-          {/* Accent bar */}
           <div className="h-[3px]" style={{ background: "linear-gradient(90deg,#24315f 0%,#41afeb 50%,#24315f 100%)" }} />
 
           <div className="px-6 py-6 sm:px-8 sm:py-7">
 
             <form onSubmit={handleSubmit} className="space-y-4">
 
-              {/* Session notice (redirected from dashboard) */}
               {sessionNotice && (
                 <div
                   className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs font-medium"
@@ -100,7 +96,6 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* Error */}
               {error && (
                 <div
                   className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs font-medium"
@@ -113,7 +108,6 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* Email */}
               <div>
                 <label className="block text-[11px] font-semibold mb-1.5" style={{ color: "#24315f" }}>
                   Email Address
@@ -129,7 +123,6 @@ export default function LoginPage() {
                 />
               </div>
 
-              {/* Password */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-[11px] font-semibold" style={{ color: "#24315f" }}>
@@ -169,7 +162,6 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {/* Submit */}
               <button
                 type="submit"
                 disabled={loading}
@@ -190,7 +182,6 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-center gap-2 mt-5">
           <span className="login-divider" />
           <p className="login-footer">Bearth Admin Console · Secure Access</p>

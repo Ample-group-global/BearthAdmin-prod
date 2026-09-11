@@ -10,7 +10,6 @@ export const TIER_META = [
 ];
 export const TIER_COLOR: Record<string, string> = Object.fromEntries(TIER_META.map(t => [t.label, t.color]));
 
-// ── Spinner ───────────────────────────────────────────────────────────────────
 export function Spinner({ size = 16, color = 'currentColor' }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ animation: 'studio-spin .75s linear infinite', flexShrink: 0 }}>
@@ -20,7 +19,6 @@ export function Spinner({ size = 16, color = 'currentColor' }: { size?: number; 
   );
 }
 
-// ── Check icon ────────────────────────────────────────────────────────────────
 export function CheckIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
@@ -29,7 +27,6 @@ export function CheckIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-// ── Rarity card ───────────────────────────────────────────────────────────────
 export function RarityCard({ item, jobBitmaps, layers, canvasW, canvasH, onClick, bitmapsVer }) {
   const tierColor = TIER_COLOR[item.tier] ?? '#6B7280';
   const canvasRef    = useRef(null);
@@ -62,7 +59,6 @@ export function RarityCard({ item, jobBitmaps, layers, canvasW, canvasH, onClick
     return () => obs.disconnect();
   }, []);
 
-  // Re-draw when bitmaps finish loading (fixes blank canvas on first render)
   useEffect(() => {
     if (bitmapsVer > 0) { drawn.current = false; draw(); }
   }, [bitmapsVer]);
@@ -96,7 +92,6 @@ export function RarityCard({ item, jobBitmaps, layers, canvasW, canvasH, onClick
   );
 }
 
-// ── Progress bar ──────────────────────────────────────────────────────────────
 export function ProgressBar({ value, max, color }: { value: number; max: number; color?: string }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
@@ -106,7 +101,6 @@ export function ProgressBar({ value, max, color }: { value: number; max: number;
   );
 }
 
-// ── Horizontal layer filter pill ─────────────────────────────────────────────
 export function HLayerFilter({ layer, activeFilter, onTraitClick }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);

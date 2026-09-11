@@ -5,8 +5,6 @@ export const dynamic = 'force-dynamic';
 
 const API_BASE = process.env.BEARTH_API_URL!;
 
-// Forward layer PNG uploads to BearthApi, which pushes them straight to the
-// Filebase bearth-layers S3 bucket. No local disk copy is kept anywhere.
 export async function POST(request: NextRequest) {
   const token = getSessionToken(request);
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

@@ -2,8 +2,6 @@
 
 import { ErrBanner } from "@/components/nft/Banner";
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
 interface WaveSchedule {
   wave_number: number;
   wave_name: string;
@@ -20,8 +18,6 @@ interface WaveSchedule {
   quantity: number;
 }
 
-// ─── Props ─────────────────────────────────────────────────────────────────────
-
 interface RevealScheduleEditModalProps {
   wave: WaveSchedule;
   date: string;
@@ -31,8 +27,6 @@ interface RevealScheduleEditModalProps {
   saving: boolean;
   error: string | null;
 }
-
-// ─── RevealScheduleEditModal ───────────────────────────────────────────────────
 
 export default function RevealScheduleEditModal({
   wave,
@@ -62,7 +56,7 @@ export default function RevealScheduleEditModal({
           </button>
         </div>
         <div className="px-6 py-5 space-y-4">
-          {error && <ErrBanner msg={error} onDismiss={() => {/* caller manages error state */}} />}
+          {error && <ErrBanner msg={error} onDismiss={() => {}} />}
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: "#374151" }}>
               Reveal Date &amp; Time

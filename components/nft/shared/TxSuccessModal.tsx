@@ -1,8 +1,5 @@
 "use client";
 
-// Green-checkmark success modal shown after any on-chain transaction completes.
-// Replaces the near-identical SuccessModal + TreasurySuccessModal in waves/page.tsx.
-
 interface TxSuccessModalProps {
   title: string;
   message: string;
@@ -26,7 +23,6 @@ export default function TxSuccessModal({ title, message, txHash, onClose }: TxSu
         style={{ border: "1px solid #e5e7eb" }}
       >
         <div className="px-8 py-8 space-y-4">
-          {/* Green checkmark */}
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
             style={{ background: "rgba(22,163,74,0.1)" }}
@@ -42,13 +38,11 @@ export default function TxSuccessModal({ title, message, txHash, onClose }: TxSu
             </svg>
           </div>
 
-          {/* Title + message */}
           <div>
             <h2 className="text-lg font-extrabold" style={{ color: "#24315f" }}>{title}</h2>
             <p className="text-sm mt-1" style={{ color: "#6b7280" }}>{message}</p>
           </div>
 
-          {/* Tx hash box */}
           {txHash && (
             <>
               <div
@@ -86,7 +80,6 @@ export default function TxSuccessModal({ title, message, txHash, onClose }: TxSu
           )}
         </div>
 
-        {/* Done button */}
         <div className="px-6 pb-6">
           <button
             onClick={onClose}

@@ -1,7 +1,5 @@
 "use client";
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
 interface WaveSchedule {
   wave_number: number;
   wave_name: string;
@@ -18,8 +16,6 @@ interface WaveSchedule {
   quantity: number;
 }
 
-// ─── Local helper (pure logic — duplicated from page to keep component self-contained) ──
-
 function waveState(w: WaveSchedule): "revealed" | "ready_reveal" | "reveal_scheduled" | "active" | "ended" | "ended_zero" | "upcoming" | "not_scheduled" {
   const now = Date.now();
   if (w.is_revealed) return "revealed";
@@ -30,23 +26,18 @@ function waveState(w: WaveSchedule): "revealed" | "ready_reveal" | "reveal_sched
     if ((w.sold_count ?? 0) === 0) return "ended_zero";
     return "ended";
   }
-  // Time-window fallback: scheduler may not have fired yet (up to 30s lag)
   if (w.scheduled_start && new Date(w.scheduled_start).getTime() <= now) {
     if (!w.scheduled_end || new Date(w.scheduled_end).getTime() > now) return "active";
-    return "ended"; // both start and end passed but DB flags not yet updated
+    return "ended";
   }
   if (w.scheduled_start) return "upcoming";
   return "not_scheduled";
 }
 
-// ─── Props ─────────────────────────────────────────────────────────────────────
-
 interface WaveProgressStepperProps {
   revealWaves: WaveSchedule[];
   stateMeta: Record<string, { label: string; color: string; bg: string }>;
 }
-
-// ─── WaveProgressStepper ───────────────────────────────────────────────────────
 
 export default function WaveProgressStepper({ revealWaves, stateMeta }: WaveProgressStepperProps) {
   return (

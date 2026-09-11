@@ -17,9 +17,7 @@ import NftFiltersRow from "./components/NftFiltersRow";
 import NftHistoryModal from "./components/NftHistoryModal";
 import { fmtDatetime as fmt, TIER_COLORS } from "@/lib/nft-utils";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 20;
-// ─── Types — Records tab ──────────────────────────────────────────────────────
 
 interface NftRecord {
   id: string;
@@ -50,7 +48,6 @@ interface NftRecord {
   totalCount: number;
   collectionId: string | null;
   collectionName: string | null;
-  // wave info
   waveId: string | null;
   waveNumber: number | null;
   waveName: string | null;
@@ -123,22 +120,17 @@ function RevealBadge({ revealed }: { revealed: boolean }) {
     </span>;
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
 const ETH_ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 
 export default function NftPage() {
-  // ── URL-driven wallet filter ──────────────────────────────────────────────
   const searchParams = useSearchParams();
   const rawWallet = searchParams.get("wallet") ?? "";
   const initialWallet = ETH_ADDR_RE.test(rawWallet) ? rawWallet : "";
   const [ownerFilter, setOwnerFilter] = useState<string>(initialWallet);
   const ownerFilterRef = useRef<string>(initialWallet);
 
-  // ── Tab ──────────────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"nftlist" | "otc" | "bulk" | "gifts" | "auctions">("nftlist");
 
-  // ── Records tab state ─────────────────────────────────────────────────────
   const [records, setRecords] = useState<NftRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [totalAll, setTotalAll] = useState(0);
@@ -175,24 +167,18 @@ export default function NftPage() {
   const [mintedFrom, setMintedFrom] = useState("");
   const [mintedTo, setMintedTo] = useState("");
 
-  // ── Per-NFT reveal + transfer state ───────────────────────────────────────
   const [revealUri, setRevealUri] = useState("");
   const [revealing, setRevealing] = useState(false);
   const [revealMsg, setRevealMsg] = useState<string | null>(null);
 
-  // ── Per-token SBT state ───────────────────────────────────────────────────
   const [sbtBusy, setSbtBusy] = useState(false);
   const [sbtMsg, setSbtMsg] = useState<string | null>(null);
-  const [sbtRowBusy, setSbtRowBusy] = useState<string | null>(null); // record id being toggled inline
+  const [sbtRowBusy, setSbtRowBusy] = useState<string | null>(null);
 
-  // ── Table row: treasury move busy state ──────────────────────────────────
-
-  // ── Modal lifecycle-action state ──────────────────────────────────────────
-  const [modalMintMoveRecip, setModalMintMoveRecip] = useState("");   // State 1
+  const [modalMintMoveRecip, setModalMintMoveRecip] = useState("");
   const [modalMintMoveBusy, setModalMintMoveBusy] = useState(false);
   const [modalMintMoveMsg, setModalMintMoveMsg] = useState<string | null>(null);
 
-  // ── Testnet reset state ───────────────────────────────────────────────────
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
@@ -200,7 +186,6 @@ export default function NftPage() {
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Records data loading ─────────────────────────────────────────────────
   const loadRecords = useCallback((
     q: string, off: number, status: string, stage: string, revealed: string, wave: string,
     sk?: string, sd?: "asc" | "desc",
@@ -275,7 +260,6 @@ export default function NftPage() {
     }
   }, [loadRecords, collectionFilter]);
 
-  // ── Initial loads ─────────────────────────────────────────────────────────
   useEffect(() => {
     fetch("/api/master", { credentials: "include" })
       .then(r => r.json())
@@ -283,8 +267,6 @@ export default function NftPage() {
       .catch(() => { });
   }, []);
 
-  // Waves are per-collection now — the Wave filter/reveal-panel only make
-  // sense once a specific collection is selected (not "All Collections").
   useEffect(() => {
     if (!collectionFilter) { setWaves([]); return; }
     fetch(`/api/nft-sell/waves?collection_id=${collectionFilter}`, { credentials: "include" })
@@ -295,7 +277,6 @@ export default function NftPage() {
     loadRecords(search, offset, statusFilter, stageFilter, revealFilter, waveFilter, sortKey, sortDir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
   }, [offset, statusFilter, stageFilter, revealFilter, waveFilter, mintTypeFilter, rarityTierFilter, collectionFilter]);
 
-  // ── Watchdog: silent 30s poll on stats ───────────────────────────────────
   const [recWatchAlert, setRecWatchAlert] = useState<string | null>(null);
   const [recWatchUpdated, setRecWatchUpdated] = useState<Date | null>(null);
   const prevRecMintedRef = useRef<number | null>(null);
@@ -311,12 +292,11 @@ export default function NftPage() {
         setRecWatchAlert(`${d.totalMinted - prevRecMintedRef.current} new NFT${d.totalMinted - prevRecMintedRef.current > 1 ? "s" : ""} minted on-chain. Refresh records to see latest.`);
       }
       prevRecMintedRef.current = d.totalMinted ?? prevRecMintedRef.current;
-    } catch { /* silent poll — do not surface network errors */ }
+    } catch { }
   }, []);
 
   useInterval(silentRecPoll, 30_000);
 
-  // ── Records handlers ──────────────────────────────────────────────────────
   const handleSearch = (v: string) => {
     setSearch(v);
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -336,11 +316,9 @@ export default function NftPage() {
     loadRecords(search, 0, statusFilter, stageFilter, revealFilter, waveFilter, key, dir, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
   };
 
-  // ── Computed: wave reveal panel ───────────────────────────────────────────
   const activeWave = waveFilter ? waves.find(w => String(w.waveNumber) === waveFilter) : null;
   const showRevealPanel = !!activeWave?.onChain?.closed && !activeWave?.onChain?.revealed && (activeWave?.onChain?.soldCount ?? 0) > 0;
 
-  // ── Per-NFT reveal handler ────────────────────────────────────────────────
   const handleRevealWave = async () => {
     if (!revealUri.startsWith("ipfs://")) { setRevealMsg("URI must start with ipfs://"); return; }
     setRevealing(true); setRevealMsg(null);
@@ -360,7 +338,6 @@ export default function NftPage() {
     finally { setRevealing(false); }
   };
 
-  // ── Per-token SBT toggle ─────────────────────────────────────────────────
   const handleToggleSbt = async (record: NftRecord, enable: boolean) => {
     console.group("[NftPage] handleToggleSbt");
     console.log("tokenId:", record.tokenId, "enable:", enable);
@@ -380,7 +357,6 @@ export default function NftPage() {
     finally { setSbtBusy(false); console.groupEnd(); }
   };
 
-  // ── Inline table SBT toggle (no modal required) ──────────────────────────
   const handleTableSbt = async (record: NftRecord, enable: boolean) => {
     console.group("[NftPage] handleTableSbt");
     console.log("tokenId:", record.tokenId, "enable:", enable);
@@ -397,8 +373,6 @@ export default function NftPage() {
     finally { setSbtRowBusy(null); console.groupEnd(); }
   };
 
-
-  // ── Open modal with clean state (shared by row click + action buttons) ──
   const openModal = useCallback((r: NftRecord) => {
     console.group("[NftPage] openModal");
     console.log("id:", r.id, "serial:", r.serialNumber, "revealed:", r.isRevealed);
@@ -414,7 +388,6 @@ export default function NftPage() {
     console.groupEnd();
   }, []);
 
-  // ── Modal: State 1 — Mint all reserved in wave + transfer to recipient ──
   const handleModalMintMove = async () => {
     if (!viewRecord || viewRecord.waveNumber == null) return;
     const recip = modalMintMoveRecip.trim() || null;
@@ -440,12 +413,8 @@ export default function NftPage() {
     finally { setModalMintMoveBusy(false); console.groupEnd(); }
   };
 
-
-
-  // ── Records columns ───────────────────────────────────────────────────────
   const columns: ColumnDef<NftRecord>[] = [
     {
-      // NFT thumbnail + serial + token ID merged into one column
       key: "nft",
       header: "NFT",
       sortKey: "serial_number",
@@ -455,10 +424,6 @@ export default function NftPage() {
             <NftImage hash={r.imageIpfsHash} isRevealed={r.isRevealed} blindBoxUri={blindBoxImageUrl} size={52} />
           </div>
           <div>
-            {/* Token ID (once minted) is always the primary/bold label -- the
-                serial number is always secondary and always explicitly
-                labeled "Serial", so a bare "#N" is never ambiguous with a
-                real on-chain token ID. */}
             {r.tokenId != null ? (
               <>
                 <div className="font-mono font-bold text-sm leading-tight" style={{ color: "#0f172a" }}>
@@ -536,13 +501,10 @@ export default function NftPage() {
       },
     },
     {
-      // Single derived NFT status — industry standard, no logistics jargon
       key: "status",
       header: "Status",
       align: "center",
       render: r => {
-        // Exactly 5 lifecycle states, in this precedence order:
-        // pre_mint -> Blind Box(Minted) -> Reserved -> In Treasure -> Revealed
         const code = r.deliveryStatusCode;
         const inTreasury = code === "treasury_wallet" || code === "transferred";
         const isPendingSweep = code === "reserved" || code === "treasury_pending" || (r.tokenId == null && r.waveRevealScheduledAt != null);
@@ -598,7 +560,6 @@ export default function NftPage() {
       header: "SBT",
       align: "center",
       render: r => {
-        // Only minted tokens can have SBT toggled
         if (r.tokenId == null) return <span className="text-xs" style={{ color: "#d1d5db" }}>—</span>;
         const busy = sbtRowBusy === r.id;
         if (r.tokenSbt) {
@@ -629,7 +590,6 @@ export default function NftPage() {
       key: "reveal_date",
       header: "Reveal",
       render: r => {
-        // Unminted NFTs have no per-token reveal — reveal happens via Mint & Move flow
         if (r.tokenId == null) return <span className="text-xs" style={{ color: "#d1d5db" }}>—</span>;
         if (r.isRevealed && r.revealedAt) return (
           <div>
@@ -662,7 +622,6 @@ export default function NftPage() {
       },
     },
     {
-      // Most recent lifecycle event only — single compact line
       key: "last_activity",
       header: "Last Activity",
       render: r => {
@@ -689,7 +648,6 @@ export default function NftPage() {
       header: "Action",
       align: "center",
       render: r => {
-        // Only reserved unminted non-customer NFTs get an action — single-click Mint & Move
         if (r.tokenId == null && r.deliveryStatusCode === "treasury_pending" && r.mintType !== "free" && r.mintType !== "paid") {
           return (
             <button
@@ -725,11 +683,9 @@ export default function NftPage() {
     },
   ];
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-5 space-y-5">
 
-      {/* ── Page Header ── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-extrabold" style={{ color: "#24315f" }}>NFT Lists</h1>
@@ -737,10 +693,8 @@ export default function NftPage() {
             Full lifecycle report — generation, wave assignment, minting, reveal, sale, and delivery
           </p>
         </div>
-        {/* Per-tab actions */}
         {activeTab === "nftlist" && (
           <div className="flex items-center gap-2">
-            {/* Testnet-only reset — blocked on mainnet */}
             {isTestnet && (
               <button
                 onClick={() => setShowResetConfirm(true)}
@@ -778,7 +732,6 @@ export default function NftPage() {
         )}
       </div>
 
-      {/* ── Collection scope selector — drives both the stats cards and the table below ── */}
       {activeTab === "nftlist" && master && master.collections.length > 0 && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl flex-wrap"
           style={{ background: "#f8fafc", border: "1px solid #e5e7eb" }}>
@@ -803,7 +756,6 @@ export default function NftPage() {
         </div>
       )}
 
-      {/* ── Reset result banner ── */}
       {resetMsg && (
         <div className="flex items-center justify-between px-4 py-2.5 rounded-xl text-sm"
           style={{ background: resetMsg.includes("complete") ? "rgba(22,163,74,0.08)" : "rgba(220,38,38,0.08)", border: `1px solid ${resetMsg.includes("complete") ? "rgba(22,163,74,0.2)" : "rgba(220,38,38,0.2)"}`, color: resetMsg.includes("complete") ? "#16a34a" : "#dc2626" }}>
@@ -812,7 +764,6 @@ export default function NftPage() {
         </div>
       )}
 
-      {/* ── Testnet reset confirmation dialog ── */}
       {showResetConfirm && (
         <TestnetResetConfirm
           onConfirm={handleTestnetReset}
@@ -821,11 +772,8 @@ export default function NftPage() {
         />
       )}
 
-      {/* ── Tab Bar ── */}
       <div className="ba-tabs" style={{ borderBottom: "1px solid #e5e7eb" }}>
         <div className="flex gap-1">
-          {/* Hidden: "auctions" (BearthAuction not deployed), "seasons" (mintSeasonPass removed), "burn" (BearthBreeding not deployed) */}
-          {/* Hidden for now (work in progress): "otc", "bulk", "gifts", "events" */}
           {(["nftlist"] as const).map(tab => {
             const LABELS: Record<string, string> = { nftlist: "Records", otc: "OTC Deals", bulk: "Bulk Ops", gifts: "Gifts", events: "Events" };
             const label = LABELS[tab] ?? tab;
@@ -857,15 +805,10 @@ export default function NftPage() {
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* RECORDS TAB                                                           */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* Watchdog alert + live indicator — shown across all tabs */}
       <WatchdogBanner alert={recWatchAlert} onDismiss={() => setRecWatchAlert(null)} updatedAt={recWatchUpdated} />
 
       {activeTab === "nftlist" && (
         <>
-          {/* ── Stats ── */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {[
               {
@@ -910,7 +853,6 @@ export default function NftPage() {
                 style={{ border: "1px solid #e5e7eb", padding: "16px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
                 onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.1)"; e.currentTarget.style.borderColor = s.color + "60"; }}
                 onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)"; e.currentTarget.style.borderColor = "#e5e7eb"; }}>
-                {/* Icon + label row */}
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#94a3b8" }}>{s.label}</p>
                   <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -918,13 +860,10 @@ export default function NftPage() {
                     {s.icon}
                   </div>
                 </div>
-                {/* Number */}
                 <p className="text-2xl font-extrabold leading-none mb-1" style={{ color: s.color }}>
                   {s.value.toLocaleString()}
                 </p>
-                {/* Subtitle */}
                 <p className="text-[10px] mb-3" style={{ color: "#94a3b8" }}>{s.sub}</p>
-                {/* Progress bar */}
                 <div className="h-1 rounded-full overflow-hidden" style={{ background: "#f1f5f9" }}>
                   <div className="h-full rounded-full transition-all duration-500"
                     style={{ width: `${s.pct}%`, background: s.color, opacity: 0.7 }} />
@@ -936,7 +875,6 @@ export default function NftPage() {
             ))}
           </div>
 
-          {/* ── Wallet deep-link banner ── */}
           {ownerFilter && (
             <div className="flex items-center justify-between px-4 py-2.5 rounded-xl text-sm"
               style={{ background: "rgba(65,175,235,0.07)", border: "1px solid rgba(65,175,235,0.25)", color: "#2e9fd8" }}>
@@ -959,7 +897,6 @@ export default function NftPage() {
             </div>
           )}
 
-          {/* ── Filters ── */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-48 max-w-64">
               <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#9bafc5" }}
@@ -984,18 +921,10 @@ export default function NftPage() {
               ))}
             </select>
 
-            {/* "Stage" (nft_stage: genesis/ascension/odyssey/...) removed as a
-                separate filter -- it 1:1 collapses into Wave (waves 1+2 both
-                map to "genesis", every other wave maps to exactly one stage),
-                and every record is "genesis" until wave-assigned anyway,
-                so it added no filtering power Wave doesn't already have. */}
-
-            {/* NFT lifecycle status filter */}
             <select value={revealFilter}
               onChange={e => {
                 const newReveal = e.target.value;
                 setRevealFilter(newReveal);
-                // Clear rarity tier for pre-reveal stages (no rarity data yet)
                 const noRarityStages = ["pre_mint", "sold", "unsold"];
                 if (rarityTierFilter && noRarityStages.includes(newReveal)) {
                   setRarityTierFilter("");
@@ -1066,7 +995,6 @@ export default function NftPage() {
             )}
           </div>
 
-          {/* ── Wave Reveal Panel ── */}
           {showRevealPanel && (
             <WaveRevealPanel
               waveFilter={waveFilter}
@@ -1078,7 +1006,6 @@ export default function NftPage() {
             />
           )}
 
-          {/* ── Table ── */}
           <DataTable
             columns={columns}
             data={records}
@@ -1097,13 +1024,11 @@ export default function NftPage() {
         </>
       )}
 
-
       {activeTab === "otc" && <OtcTab />}
       {activeTab === "bulk" && <BulkTab />}
       {activeTab === "gifts" && <GiftsTab />}
       {activeTab === "auctions" && <AuctionsTab />}
 
-      {/* ══ Full History Modal ══════════════════════════════════════════════════ */}
       {viewRecord && (
         <NftHistoryModal
           record={viewRecord}

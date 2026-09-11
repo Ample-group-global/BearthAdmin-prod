@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic';
 
 const API_BASE = process.env.BEARTH_API_URL ?? 'http://localhost:4000';
 
-// Proxies to BearthApi, which serves layer images from Filebase S3 only.
 export async function GET(_req: Request, { params }: { params: Promise<{ rel: string[] }> }) {
   const rel = (await params).rel.join('/');
 

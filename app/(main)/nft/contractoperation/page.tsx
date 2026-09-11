@@ -10,8 +10,6 @@ import MembershipTab from "@/components/nft/tabs/MembershipTab";
 import AdvancedTab   from "@/components/nft/tabs/AdvancedTab";
 import WhitelistTab  from "@/components/nft/tabs/WhitelistTab";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
 const TABS: { key: string; label: string }[] = [
   { key: "Mint Operations",       label: "Mint Operations" },
   { key: "Collection & Controls", label: "Collection & Controls" },
@@ -22,36 +20,26 @@ const TABS: { key: string; label: string }[] = [
 ];
 type Tab = "Mint Operations" | "Collection & Controls" | "Whitelist" | "Royalty" | "Membership" | "Advanced";
 
-// ─── Main Page (thin orchestrator) ───────────────────────────────────────────
-
 interface CollectionOption { id: string; name: string; }
 
 export default function ContractOperationPage() {
   const [tab, setTab] = useState<Tab>("Mint Operations");
 
-  // Collection selector -- every action on this page must be scoped to a
-  // real collection (task #42/#43, feedback-no-shared-contract-standing-policy.md).
-  // Mirrors app/(main)/nft/waves/page.tsx's pattern exactly: fetch /api/master
-  // for the list, default to the first collection.
   const [collections,  setCollections]  = useState<CollectionOption[]>([]);
   const [collectionId, setCollectionId] = useState<string>("");
 
-  // Shared data (loaded once, refreshed on write)
   const [config,      setConfig]      = useState<CollectionConfig | null>(null);
   const [onChain,     setOnChain]     = useState<OnChainInfo | null>(null);
   const [events,      setEvents]      = useState<ContractEvent[]>([]);
 
-  // Page-level UI
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState<string | null>(null);
 
-  // Watchdog (silent 60s poll)
   const [watchAlert,    setWatchAlert]    = useState<string | null>(null);
   const [watchUpdated,  setWatchUpdated]  = useState<Date | null>(null);
   const prevPhaseRef   = useRef<number | null>(null);
   const prevMintedRef  = useRef<number | null>(null);
 
-  // ── Fetch the collection list once, default to the first one ──
   useEffect(() => {
     fetch("/api/master", { credentials: "include" })
       .then(r => r.json())
@@ -64,7 +52,6 @@ export default function ContractOperationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Load ──
   const load = useCallback(async () => {
     if (!collectionId) return;
     setLoading(true); setError(null);
@@ -85,7 +72,6 @@ export default function ContractOperationPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Silent watchdog ──
   const silentPoll = useCallback(async () => {
     if (!collectionId) return;
     try {
@@ -106,12 +92,11 @@ export default function ContractOperationPage() {
       }
       prevPhaseRef.current  = oc.currentPhase;
       prevMintedRef.current = oc.totalMinted;
-    } catch { /* silent */ }
+    } catch { }
   }, [collectionId]);
 
   useInterval(silentPoll, 60_000);
 
-  // ── Loading ──
   if (loading) return (
     <div className="flex items-center justify-center h-64" style={{ color: "#9bafc5" }}>
       <svg className="w-5 h-5 animate-spin mr-2" fill="none" viewBox="0 0 24 24">
@@ -122,14 +107,11 @@ export default function ContractOperationPage() {
     </div>
   );
 
-  // ── Render ──
   return (
     <div className="flex flex-col h-full">
 
-      {/* ── Sticky header strip ── */}
       <div className="flex-shrink-0 px-5 pt-5 pb-0 space-y-4" style={{ background: "#f0f2f7" }}>
 
-        {/* Title + refresh */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-lg font-bold" style={{ color: "#24315f" }}>Contract Operations</h1>
@@ -147,7 +129,6 @@ export default function ContractOperationPage() {
           </button>
         </div>
 
-        {/* Watchdog alerts */}
         {watchAlert && (
           <div className="flex items-center justify-between px-4 py-2 rounded-xl text-sm"
             style={{ background: "rgba(65,175,235,0.08)", border: "1px solid rgba(65,175,235,0.25)", color: "#2e9fd8" }}>
@@ -162,9 +143,6 @@ export default function ContractOperationPage() {
           </div>
         )}
 
-        {/* Collection selector -- every action on this page (pause/unpause,
-            withdraw, emergency transfer, royalty, block account, etc.) is
-            scoped to whichever collection is selected here. */}
         {collections.length > 0 && (
           <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl flex-wrap"
             style={{ background: "#f8fafc", border: "1px solid #e5e7eb" }}>
@@ -184,10 +162,8 @@ export default function ContractOperationPage() {
           </div>
         )}
 
-        {/* Page-level errors */}
         {error && <ErrBanner msg={error} />}
 
-        {/* Tabs */}
         <div className="flex gap-1 border-b flex-wrap" style={{ borderColor: "#e5e7eb" }}>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key as Tab)}
@@ -203,7 +179,6 @@ export default function ContractOperationPage() {
         </div>
       </div>
 
-      {/* ── Tab content ── */}
       <div className="flex-1 overflow-y-auto px-5 py-5">
         {tab === "Mint Operations"      && <MintOperationsTab    collectionId={collectionId} onChain={onChain} config={config} onRefresh={load} />}
         {tab === "Collection & Controls" && <CollectionControlsTab collectionId={collectionId} onChain={onChain} config={config} events={events} onRefresh={load} />}

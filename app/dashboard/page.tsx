@@ -80,11 +80,6 @@ export default function DashboardPage() {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [overviewError, setOverviewError] = useState(false);
 
-  // Hands the collection id to Waves via a short-lived server-side cookie
-  // instead of a ?collectionId=<uuid> query param, so the raw id never shows
-  // up in the address bar (mirrors the existing /api/session/collection
-  // pattern the Studio flow already uses, kept as a separate cookie so this
-  // never collides with whatever collection is active in Studio).
   const goToWaves = async (collectionId: string) => {
     try {
       await fetch('/api/session/waves-collection', {
@@ -102,7 +97,7 @@ export default function DashboardPage() {
       .then(r => r.ok ? r.json() : { menus: [] })
       .then(data => {
         const menus: MenuItem[] = (data.menus ?? [])
-          .filter((m: MenuItem) => m.href !== "/dashboard") // exclude the dashboard menu itself
+          .filter((m: MenuItem) => m.href !== "/dashboard")
           .sort((a: MenuItem, b: MenuItem) => a.sortOrder - b.sortOrder);
         setCards(menus);
         setIsAdmin(data.role === "admin");
@@ -115,8 +110,6 @@ export default function DashboardPage() {
       .catch(() => setStatsError(true));
   }, []);
 
-  // Admin has no action pages at all (view-only role) -- this consolidated
-  // read-only overview is the only place Admin sees NFT/wave/customer/team data.
   useEffect(() => {
     if (!isAdmin) return;
     fetch("/api/admin/overview", { credentials: "include" })
@@ -134,7 +127,6 @@ export default function DashboardPage() {
         <p className="text-sm mt-0.5" style={{ color: "#9bafc5" }}>Bearth Admin — NFT Studio</p>
       </div>
 
-      {/* ── Overview stats — selling/wave activity across every collection ── */}
       {stats && stats.totals.collections > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatTile label="Collections"   value={String(stats.totals.collections)} accent="#24315f" />
@@ -146,7 +138,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── Per-collection breakdown ────────────────────────────────────── */}
       {statsError ? (
         <p className="text-sm" style={{ color: "#9bafc5" }}>Couldn&apos;t load collection statistics — try refreshing.</p>
       ) : stats === null ? (
@@ -207,7 +198,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── Admin-only read-only overview — view stats, no actions ──────── */}
       {isAdmin && (
         <div className="space-y-4">
           <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Overview (Read-Only)</h2>
@@ -264,7 +254,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── Quick links — unchanged navigation shortcuts ────────────────── */}
       <div>
         <h2 className="text-sm font-bold uppercase tracking-wide mb-3" style={{ color: "#9bafc5" }}>Quick Links</h2>
         {cards === null ? (

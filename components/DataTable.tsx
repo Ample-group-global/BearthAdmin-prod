@@ -2,8 +2,6 @@
 
 import React from "react";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 export interface ColumnDef<T> {
   key: string;
   header: string;
@@ -30,8 +28,6 @@ interface DataTableProps<T> {
   hideSerial?:    boolean;
 }
 
-// ─── Pagination helper ────────────────────────────────────────────────────────
-
 function buildPages(current: number, totalPages: number): Array<number | "…"> {
   if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
   const pages: Array<number | "…"> = [];
@@ -45,8 +41,6 @@ function buildPages(current: number, totalPages: number): Array<number | "…"> 
   return pages;
 }
 
-// ─── Sort icon ────────────────────────────────────────────────────────────────
-
 function SortIcon({ active, dir }: { active: boolean; dir?: "asc" | "desc" }) {
   const up   = active && dir === "asc"  ? "#41afeb" : "#d1d5db";
   const down = active && dir === "desc" ? "#41afeb" : "#d1d5db";
@@ -57,8 +51,6 @@ function SortIcon({ active, dir }: { active: boolean; dir?: "asc" | "desc" }) {
     </span>
   );
 }
-
-// ─── DataTable component ──────────────────────────────────────────────────────
 
 export default function DataTable<T>({
   columns,
@@ -103,7 +95,6 @@ export default function DataTable<T>({
   return (
     <div className="space-y-3">
 
-      {/* ── Error banner ── */}
       {error && (
         <div className="px-4 py-3 rounded-xl text-sm flex items-center gap-2"
           style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }}>
@@ -115,7 +106,6 @@ export default function DataTable<T>({
         </div>
       )}
 
-      {/* ── Table card ── */}
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>
         {loading ? (
           <div className="flex items-center justify-center h-52" style={{ color: "#9bafc5" }}>
@@ -193,11 +183,9 @@ export default function DataTable<T>({
         )}
       </div>
 
-      {/* ── Pagination ── */}
       {total > 0 && (
         <div className="flex items-center justify-between flex-wrap gap-3 px-1 py-1">
 
-          {/* Range info */}
           <span className="text-xs font-medium" style={{ color: "#9bafc5" }}>
             Showing{" "}
             <strong style={{ color: "#374151" }}>{rangeStart}–{rangeEnd}</strong>
@@ -206,11 +194,9 @@ export default function DataTable<T>({
             {" records"}
           </span>
 
-          {/* Page buttons — only render when multiple pages */}
           {totalPages > 1 && (
             <div className="flex items-center gap-1">
 
-              {/* First + Prev */}
               <button
                 onClick={() => onPageChange(0)}
                 disabled={currentPage === 1}
@@ -238,7 +224,6 @@ export default function DataTable<T>({
                 <span style={{ fontSize: 12 }}>Prev</span>
               </button>
 
-              {/* Page numbers */}
               {buildPages(currentPage, totalPages).map((p, idx) =>
                 p === "…" ? (
                   <span key={`e-${idx}`}
@@ -261,7 +246,6 @@ export default function DataTable<T>({
                 )
               )}
 
-              {/* Next + Last */}
               <button
                 onClick={() => onPageChange(Math.min((totalPages - 1) * pageSize, offset + pageSize))}
                 disabled={currentPage === totalPages}
@@ -292,7 +276,6 @@ export default function DataTable<T>({
             </div>
           )}
 
-          {/* Page counter */}
           <span className="text-xs font-medium" style={{ color: "#9bafc5" }}>
             Page <strong style={{ color: "#374151" }}>{currentPage}</strong>
             {" / "}

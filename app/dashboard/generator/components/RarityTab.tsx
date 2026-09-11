@@ -3,20 +3,11 @@
 import { useMemo } from 'react';
 import { TIERS as CANONICAL_TIERS, getTier } from '../../../../lib/studio/tiers';
 
-// ── Tier helpers ──────────────────────────────────────────────────────────────
-// Thresholds/colors come from lib/studio/tiers.ts (the same source
-// RarityModal.tsx uses) so a future threshold change can't drift out of
-// sync here — this file previously reimplemented its own 1/5/15% cutoffs,
-// which is exactly the duplication that caused a real mismatch bug before
-// (see RarityModal.tsx's own comment on this).
 function rarityTier(pct: number) {
   const t = getTier(pct / 100);
   return { label: t.label, color: t.color };
 }
 
-// Display-only metadata (icon/description/range copy) layered onto the
-// canonical thresholds — never a second copy of the threshold values
-// themselves.
 const TIER_DISPLAY: Record<string, { icon: string; preRange: string; postRange: string; desc: string }> = {
   Legendary: { icon: '👑', preRange: '≤ 1%',  postRange: 'Top 1%',  desc: 'Ultra-rare. Highest collector value.' },
   Epic:      { icon: '🔮', preRange: '≤ 5%',  postRange: 'Top 5%',  desc: 'Very rare. Strong collector demand.' },
@@ -25,7 +16,6 @@ const TIER_DISPLAY: Record<string, { icon: string; preRange: string; postRange: 
 };
 const TIERS = CANONICAL_TIERS.map(t => ({ label: t.label, color: t.color, ...TIER_DISPLAY[t.label] }));
 
-// ── Tier overview cards ───────────────────────────────────────────────────────
 function TierOverview() {
   return (
     <div className="rt-section">
@@ -60,7 +50,6 @@ function TierOverview() {
   );
 }
 
-// ── Formula section ───────────────────────────────────────────────────────────
 function FormulaSection({ supply }) {
   const ex = Math.min(supply, 100);
   const EX = [
@@ -79,7 +68,6 @@ function FormulaSection({ supply }) {
       </div>
       <div className="rt-formula-grid">
 
-        {/* Pre-gen */}
         <div className="rt-formula-card">
           <div className="rt-formula-phase-badge" style={{ background:'#34D39920', color:'#059669', border:'1px solid #34D39950' }}>
             Pre-Generation
@@ -108,7 +96,6 @@ function FormulaSection({ supply }) {
           </div>
         </div>
 
-        {/* Post-gen */}
         <div className="rt-formula-card">
           <div className="rt-formula-phase-badge" style={{ background:'#6366F120', color:'#4f46e5', border:'1px solid #6366F150' }}>
             Post-Generation
@@ -148,7 +135,6 @@ function FormulaSection({ supply }) {
   );
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
 export default function RarityTab({ layers, weights, collection }) {
   const supply = collection?.supply ?? 100;
 
@@ -167,10 +153,8 @@ export default function RarityTab({ layers, weights, collection }) {
   return (
     <div className="rt-page">
 
-      {/* ── Tier overview ── */}
       <TierOverview />
 
-      {/* ── Formulas ── */}
       <FormulaSection supply={supply} />
 
     </div>

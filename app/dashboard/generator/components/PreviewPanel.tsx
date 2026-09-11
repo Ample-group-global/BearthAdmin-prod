@@ -6,12 +6,11 @@ import { fetchWithTimeout } from '../../../../lib/fetchWithTimeout';
 import NftPopup from './NftPopup';
 
 const THUMB      = 160;
-const CARD_MIN_W = 155; // matches CSS minmax(155px, 1fr)
-const GAP        = 12;  // matches CSS gap: 12px
-const CARD_BODY  = 36;  // thumb body height below image (padding + name)
-const OVERSCAN   = 3;   // extra rows rendered above/below viewport
+const CARD_MIN_W = 155;
+const GAP        = 12;
+const CARD_BODY  = 36;
+const OVERSCAN   = 3;
 
-// ── Sort + filter ─────────────────────────────────────────────────────────────
 function applyView(items, sort, filter) {
   let result = filter
     ? items.filter(({ combo }) => combo[filter.folder]?.stem === filter.stem)
@@ -21,9 +20,6 @@ function applyView(items, sort, filter) {
   return result;
 }
 
-// ── NFT Card ──────────────────────────────────────────────────────────────────
-// memo prevents re-renders on parent scroll state changes; useLayoutEffect
-// (no deps) redraws after every render so canvas is never left stale/blank.
 const NFTCard = memo(function NFTCard({ index, rank, tier, score, combo, layers, bitmapCache, bitmapVersion, canvasW, canvasH, collW, collH, onClick }) {
   const canvasRef = useRef(null);
 
@@ -39,8 +35,6 @@ const NFTCard = memo(function NFTCard({ index, rank, tier, score, combo, layers,
     }
   }
 
-  // No dependency array → redraws after every render, so a canvas that was
-  // cleared (e.g. by a width/height attribute update) is immediately repainted.
   useLayoutEffect(() => { draw(); });
 
   function handleClick() {
@@ -68,7 +62,6 @@ const NFTCard = memo(function NFTCard({ index, rank, tier, score, combo, layers,
   );
 });
 
-// ── Layer filter sidebar row ──────────────────────────────────────────────────
 function FilterTraitThumb({ rel, name }) {
   const { getBlobUrl } = useLayerFiles();
   return rel ? (
@@ -117,7 +110,6 @@ const SORT_LABELS = {
   'rare-last':  'Most rare last',
 };
 
-// ── Main component ────────────────────────────────────────────────────────────
 export default function PreviewPanel({ weights, layers, collection, conflicts, collectionId }) {
   const { getBlobUrl } = useLayerFiles();
   const supply  = Number(collection?.supply ?? 0);
@@ -136,7 +128,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
   const [popup,         setPopup]         = useState(null);
   const [bitmapVersion, setBitmapVersion] = useState(0);
 
-  // Virtual scroll state
   const [scrollTop,  setScrollTop]  = useState(0);
   const [gridW,      setGridW]      = useState(0);
   const [gridH,      setGridH]      = useState(600);
@@ -147,7 +138,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
   const sortRef     = useRef('shuffle');
   const filterRef   = useRef(null);
 
-  // Measure scroll container
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -159,9 +149,8 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
     setGridW(el.clientWidth);
     setGridH(el.clientHeight);
     return () => ro.disconnect();
-  }, [phase]); // re-attach when phase changes to 'ready'
+  }, [phase]);
 
-  // Virtual grid math
   const cols   = gridW > 0 ? Math.max(1, Math.floor((gridW + GAP) / (CARD_MIN_W + GAP))) : 4;
   const cardW  = gridW > 0 ? Math.floor((gridW - (cols - 1) * GAP) / cols) : CARD_MIN_W;
   const rowH   = cardW + CARD_BODY + GAP;
@@ -172,7 +161,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
   const padBot    = Math.max(0, (totalRows - endRow - 1) * rowH);
   const window_   = visible.slice(startRow * cols, (endRow + 1) * cols);
 
-  // Close sort dropdown on outside click
   const sortWrapRef = useRef(null);
   useEffect(() => {
     if (!sortOpen) return;
@@ -189,11 +177,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, []);
 
-  // Load the real, already-generated NFTs for this collection instead of a
-  // fresh random sample — same display-items endpoint and combo-mapping
-  // ExportPanel.tsx uses, so Preview and Export always agree. Returns null
-  // (caller falls back to a fresh /preview sample) when there's no completed
-  // job yet, or the fetch fails for any reason.
   async function loadRealGeneratedItems() {
     if (!collectionId) return null;
     try {
@@ -238,7 +221,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
     }
     setPhase('loading');
 
-    // 1. Pre-load all unique layer bitmaps
     const rels = [...new Set(
       layers.flatMap(l => l.assets.filter(a => a.rel).map(a => a.rel))
     )];
@@ -246,8 +228,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
     const imgTotal = rels.length;
     setLoadMsg('Loading images…');
 
-    // Load bitmaps in small batches to avoid OOM from 86 concurrent 2000×2000 images.
-    // Use server-resized 160×160 thumbnails (Sharp) instead of full-res raw PNGs.
     const BATCH = 10;
     for (let i = 0; i < rels.length; i += BATCH) {
       await Promise.all(rels.slice(i, i + BATCH).map(async rel => {
@@ -275,20 +255,8 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
       }));
     }
 
-    // Signal that bitmaps are ready — forces NFTCard re-renders so canvases draw
     setBitmapVersion(v => v + 1);
 
-    // 2 & 3. If this collection has already been really generated, show
-    // THAT real data — never a fresh independent sample that can (and did,
-    // confirmed live) show a completely different rank/score/tier than
-    // what's actually stored and what Export will use. Only when nothing's
-    // been generated yet (or the caller explicitly wants a fresh trial —
-    // the Randomize button) does this fall through to the sampling
-    // endpoint, which remains the single source of truth for combo
-    // generation + rarity scoring (same generateAllCombos()/computeRarity()
-    // real generation uses) — it sends the artist's current Organise-tab
-    // state (including unsaved edits) and just renders whatever the server
-    // computes.
     setLoadMsg(`Generating NFTs… 0 / ${supply}`);
     await new Promise(r => setTimeout(r, 0));
 
@@ -332,7 +300,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
   function handleSort(s) {
     setSortOpen(false);
     if (s === 'shuffle') {
-      // Re-shuffle regenerates combos — bitmaps are already cached so loading phase is instant
       run();
     } else {
       setSortBy(s);
@@ -367,7 +334,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
 
   return (
     <div className="preview-layout">
-      {/* ── Left panel ── */}
       <div className="preview-left-panel">
         <button className="randomize-btn" onClick={run} disabled={phase === 'loading' || !supply || !srcW || !srcH}>
           {phase === 'loading' ? loadMsg : 'Randomize'}
@@ -405,7 +371,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
         </div>
       </div>
 
-      {/* ── Right panel ── */}
       <div className="preview-right-panel">
         {phase === 'loading' && (
           <div className="preview-empty">
@@ -416,7 +381,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
 
         {phase === 'ready' && (
           <>
-            {/* Controls bar — stays fixed at top, does NOT scroll */}
             <div className="prev-controls-bar">
               <div className="prev-tokens-badge">
                 {visible.length.toLocaleString()} tokens
@@ -448,13 +412,11 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
               </div>
             )}
 
-            {/* Virtual scroll container — only cards in viewport are in the DOM */}
             <div
               ref={scrollRef}
               className="prev-grid-scroll"
               onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
             >
-              {/* Top spacer simulates rows above the visible window */}
               {padTop > 0 && <div style={{ height: padTop }} />}
 
               <div
@@ -484,7 +446,6 @@ export default function PreviewPanel({ weights, layers, collection, conflicts, c
                 })}
               </div>
 
-              {/* Bottom spacer simulates rows below the visible window */}
               {padBot > 0 && <div style={{ height: padBot }} />}
             </div>
           </>

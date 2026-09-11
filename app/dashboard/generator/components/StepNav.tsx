@@ -2,7 +2,6 @@
 'use client';
 import React from 'react';
 
-// Rarity tab hidden for the time being — flip this back to true to restore it.
 const SHOW_RARITY_TAB = false;
 
 const ALL_STEPS = [

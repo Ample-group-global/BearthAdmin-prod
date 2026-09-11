@@ -1,8 +1,5 @@
 "use client";
 
-// Amber/red/blue warning banner with triangle SVG icon.
-// Appears in RevealModal, TreasuryMoveModal, Manage Modal on-chain section, and Reset Confirm dialog.
-
 type WarningVariant = "warn" | "error" | "info";
 
 const VARIANT_STYLES: Record<WarningVariant, { bg: string; border: string; color: string; iconColor: string }> = {

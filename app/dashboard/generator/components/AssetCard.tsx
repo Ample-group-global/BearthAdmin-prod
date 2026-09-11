@@ -4,17 +4,8 @@ import { calcRarity } from '../../../../lib/studio/probability';
 import { resolveTier } from '../../../../lib/studio/tiers';
 import { useLayerFiles } from '../LayerFilesContext';
 
-// Clicking a card opens the same layer modal used by the sidebar gear icon,
-// scrolled to this trait, via onOpen — the only place weight/tier get edited
-// now (single source of truth; this card used to also carry its own inline
-// slider, which duplicated the modal's control on the exact same value and
-// could go stale relative to it).
 export default function AssetCard({ asset, weight, totalWeight, supply, onDelete, onOpen }) {
   const { tier: liveTier, pct } = calcRarity(weight, totalWeight, supply);
-  // Prefers the artist's own explicit classification (manually picked, or
-  // Excel-supplied) over the live weight computation — this card used to
-  // always show the live tier regardless of what was actually set, so the
-  // same trait could show "Epic" here and "Rare" in the Rarity modal.
   const tier = resolveTier(asset.rarityTier, liveTier);
   const { getBlobUrl } = useLayerFiles();
 

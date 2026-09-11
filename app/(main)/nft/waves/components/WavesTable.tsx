@@ -4,8 +4,6 @@ import { StatusBadge } from "@/components/nft/StatusBadge";
 import { thStyle } from "@/components/nft/styles";
 import { toLocalDateTimeInput } from "@/lib/nft-utils";
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
 interface Wave {
   id: string;
   waveNumber: number;
@@ -73,8 +71,6 @@ interface SaleMethod {
   sort_order: number;
 }
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
-
 const WAVE_ICONS: Record<number, { symbol: string; gradient: string; shadow: string }> = {
   1: { symbol: "✦", gradient: "linear-gradient(135deg, #24315f, #41afeb)", shadow: "#41afeb" },
   2: { symbol: "◈", gradient: "linear-gradient(135deg, #1a2347, #2e9fd8)", shadow: "#2e9fd8" },
@@ -106,8 +102,6 @@ const WAVE_COLORS: Record<string, { bg: string; color: string; label: string }> 
   ended:            { bg: "rgba(107,114,128,0.1)",  color: "#6b7280", label: "Ended"             },
 };
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
-
 function deriveWaveDisplayStatus(w: Wave): string {
   if (w.waveRevealed) return "revealed";
   if (w.waveClosed) {
@@ -130,8 +124,6 @@ function SaleMethodBadge({ method, saleMethods }: { method: string; saleMethods:
   );
 }
 
-// ─── Props ─────────────────────────────────────────────────────────────────────
-
 interface WavesTableProps {
   waves: Wave[];
   loading: boolean;
@@ -146,8 +138,6 @@ interface WavesTableProps {
   strategyHighlight: string | null;
   WAVES_PER_PAGE: number;
 }
-
-// ─── WavesTable ────────────────────────────────────────────────────────────────
 
 export default function WavesTable({
   waves,
@@ -165,7 +155,6 @@ export default function WavesTable({
 
   return (
     <>
-      {/* Waves Table */}
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>
         {loading ? (
           <div className="flex items-center justify-center h-48" style={{ color: "#9bafc5" }}>
@@ -190,7 +179,6 @@ export default function WavesTable({
                   const isClosed = w.waveClosed || w.status === "closed";
                   const isLocked = w.priceLocked;
                   const soldCount = w.onChain?.soldCount ?? w.soldCount ?? 0;
-                  // Wave is closed with zero minted — reveal is irrelevant (no buyers); auto-reveal fires during treasury close
                   const isZeroMinted = isClosed && soldCount === 0 && (w.quantity ?? 0) > 0 && !w.closeAction;
                   return (
                     <tr key={w.id}
@@ -198,17 +186,14 @@ export default function WavesTable({
                       onMouseEnter={e => (e.currentTarget.style.background = "#fafbff")}
                       onMouseLeave={e => (e.currentTarget.style.background = "")}>
 
-                      {/* Sr. No. */}
                       <td style={{ padding: "10px 14px", textAlign: "center", whiteSpace: "nowrap" }}>
                         <span className="text-xs font-semibold" style={{ color: "#9bafc5" }}>{(wavePage - 1) * WAVES_PER_PAGE + i + 1}</span>
                       </td>
 
-                      {/* Wave Number */}
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
                         <span className="text-xs font-bold" style={{ color: "#24315f" }}>Wave {w.waveNumber}</span>
                       </td>
 
-                      {/* Image — thematic per-wave icon */}
                       <td style={{ padding: "10px 14px", textAlign: "center" }}>
                         {(() => {
                           const icon = WAVE_ICONS[w.waveNumber];
@@ -230,12 +215,10 @@ export default function WavesTable({
                         })()}
                       </td>
 
-                      {/* Wave Name */}
                       <td style={{ padding: "10px 14px" }}>
                         <div className="font-semibold text-xs" style={{ color: "#111827" }}>{w.name}</div>
                       </td>
 
-                      {/* Purpose */}
                       <td style={{ padding: "10px 14px", minWidth: 220, maxWidth: 260 }}>
                         {WAVE_PURPOSE[w.waveNumber]
                           ? <span className="text-xs leading-relaxed" style={{ color: "#6b7280" }}>{WAVE_PURPOSE[w.waveNumber]}</span>
@@ -363,9 +346,7 @@ export default function WavesTable({
                               </span>
                             </div>
                           ) : null;
-                          // 0-minted closed wave: no reveal date picker needed — backend auto-reveals + transfers
                           if (isZeroMinted) {
-                            // Auto-treasury + no action taken yet: show trigger button (opens TreasuryMoveModal)
                             if (isAuto && !w.closeAction) return (
                               <button onClick={() => onTreasuryMove(w)}
                                 className="inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded"
@@ -376,7 +357,6 @@ export default function WavesTable({
                                 Auto Transfer
                               </button>
                             );
-                            // Already completed or manual strategy: show static badge
                             return (
                               <span className="inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded"
                                 style={isAuto
@@ -455,7 +435,6 @@ export default function WavesTable({
                             </svg>
                             Manage
                           </button>
-                          {/* 0-minted wave: manual strategy only — auto_treasury is handled automatically on reveal */}
                           {isZeroMinted && !w.closeAction && isClosed && w.unsoldStrategy === "manual" && (
                             <button
                               onClick={() => onTreasuryMove(w)}
@@ -468,7 +447,6 @@ export default function WavesTable({
                               Move to Wallet
                             </button>
                           )}
-                          {/* Waves with customer sales: require reveal first, then show Move to Wallet for manual strategy */}
                           {w.waveClosed && w.waveRevealed && !w.closeAction && !isZeroMinted &&
                             w.unsoldStrategy === "manual" &&
                             (w.treasuryPendingCount ?? 0) > 0
@@ -495,7 +473,6 @@ export default function WavesTable({
         )}
       </div>
 
-      {/* Pagination */}
       {!loading && waves.length > WAVES_PER_PAGE && (
         <div className="flex items-center justify-between px-2 py-1">
           <span className="text-xs" style={{ color: "#9bafc5" }}>
@@ -523,7 +500,6 @@ export default function WavesTable({
         </div>
       )}
 
-      {/* Footer totals */}
       {!loading && waves.length > 0 && (
         <div className="flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold"
           style={{ background: "#f9fafb", border: "1px solid #e5e7eb", color: "#24315f" }}>

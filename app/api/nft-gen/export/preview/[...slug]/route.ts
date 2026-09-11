@@ -9,7 +9,6 @@ export async function GET(
 ) {
   const { slug } = await params;
 
-  // GET /preview/:previewId/img/:edition — binary PNG thumbnail
   if (slug.length === 3 && slug[1] === "img") {
     const token = getSessionToken(req);
     if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -30,7 +29,6 @@ export async function GET(
     }
   }
 
-  // GET /preview/:previewId — status poll
   if (slug.length === 1) {
     return proxyToApi(req, `/api/nft-gen/export/preview/${slug[0]}`);
   }

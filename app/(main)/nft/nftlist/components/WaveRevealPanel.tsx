@@ -1,9 +1,5 @@
 "use client";
 
-// ─── WaveRevealPanel ──────────────────────────────────────────────────────────
-// Shown when the selected wave is closed, has sold NFTs, and has not yet been
-// revealed. Lets admin enter an IPFS base URI and trigger on-chain VRF reveal.
-
 interface WaveRevealPanelProps {
   waveFilter: string;
   revealUri: string;

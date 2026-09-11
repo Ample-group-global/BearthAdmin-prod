@@ -4,14 +4,10 @@ import { useEffect } from "react";
 import { fmtDatetime as fmt, fmtDateLong as fmtDate, shortAddr, shortHash, TIER_COLORS } from "@/lib/nft-utils";
 import NftImage from "@/components/nft/NftImage";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
 const IPFS_GATEWAY = "https://amgbearth.myfilebase.com/ipfs";
 const ETHERSCAN = process.env.NEXT_PUBLIC_NETWORK === "mainnet"
   ? "https://etherscan.io/tx/"
   : "https://sepolia.etherscan.io/tx/";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface NftRecord {
   id: string;
@@ -42,7 +38,6 @@ export interface NftRecord {
   totalCount: number;
   collectionId: string | null;
   collectionName: string | null;
-  // wave info
   waveId: string | null;
   waveNumber: number | null;
   waveName: string | null;
@@ -67,14 +62,10 @@ export interface WaveOption {
   onChain: { soldCount: number; closed: boolean; revealed: boolean } | null;
 }
 
-// ─── Local helper ─────────────────────────────────────────────────────────────
-
 function artworkId(r: NftRecord): number | null {
   if (!r.isRevealed || r.tokenId == null || r.waveQuantity == null || r.waveStartingIndex == null) return null;
   return ((r.tokenId - 1 + r.waveStartingIndex) % r.waveQuantity) + 1;
 }
-
-// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface NftHistoryModalProps {
   record: NftRecord | null;
@@ -94,8 +85,6 @@ interface NftHistoryModalProps {
   onMintMove: () => void;
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 export default function NftHistoryModal({
   record,
   onClose,
@@ -114,7 +103,6 @@ export default function NftHistoryModal({
   onMintMove,
 }: NftHistoryModalProps) {
 
-  // ── Debug: log on open ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!record) return;
     console.group("NftHistoryModal opened");
@@ -130,13 +118,11 @@ export default function NftHistoryModal({
 
   const viewRecord = record;
 
-  // ── SBT toggle with debug ───────────────────────────────────────────────────
   const handleSbtToggle = (enable: boolean) => {
     console.log("NftHistoryModal — onToggleSbt:", "tokenId:", viewRecord.tokenId, "enable:", enable);
     onToggleSbt(viewRecord, enable);
   };
 
-  // ── Mint & Move with debug ──────────────────────────────────────────────────
   const handleMintMove = () => {
     console.log("NftHistoryModal — onMintMove:", "record.id:", viewRecord.id, "recipient:", modalMintMoveRecip);
     onMintMove();
@@ -146,7 +132,6 @@ export default function NftHistoryModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.6)", backdropFilter: "blur(6px)" }}>
       <div className={`flex flex-col ba-modal-records${maximized ? " maximized" : ""}`}>
 
-        {/* ── Title Bar ───────────────────────────────────────────────────── */}
         <div className="flex-shrink-0 flex items-center justify-between px-5 py-3"
           style={{ borderBottom: "1px solid #e5e7eb", background: "#fff" }}>
           <div className="flex items-center gap-2.5">
@@ -189,29 +174,23 @@ export default function NftHistoryModal({
           </div>
         </div>
 
-        {/* ── Scrollable Body ──────────────────────────────────────────────── */}
         <div className="overflow-y-auto flex-1" style={{ background: "#f8fafc" }}>
 
-          {/* ── Identity card ── */}
           <div className="m-5 mb-0 rounded-2xl overflow-hidden bg-white" style={{ border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
             <div className="flex gap-5 p-5">
-              {/* NFT image */}
               <div className="flex-shrink-0">
                 <div className="rounded-xl overflow-hidden" style={{ border: "2px solid #e2e8f0" }}>
                   <NftImage hash={viewRecord.imageIpfsHash} isRevealed={viewRecord.isRevealed} blindBoxUri={blindBoxImageUrl} size={140} />
                 </div>
               </div>
-              {/* Details grid */}
               <div className="flex-1 min-w-0">
                 <div className="grid grid-cols-3 gap-x-4 gap-y-4">
-                  {/* Minted Token ID */}
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "#94a3b8" }}>Minted Token ID</p>
                     <p className="text-sm font-semibold leading-tight" style={{ color: viewRecord.tokenId != null ? "#0f172a" : "#94a3b8" }}>
                       {viewRecord.tokenId != null ? `#${viewRecord.tokenId}` : "Not minted"}
                     </p>
                   </div>
-                  {/* Artwork ID — computed after VRF reveal */}
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "#94a3b8" }}>Artwork ID</p>
                     {artworkId(viewRecord) != null
@@ -219,7 +198,6 @@ export default function NftHistoryModal({
                       : <p className="text-sm leading-tight" style={{ color: "#94a3b8" }}>{viewRecord.isRevealed ? "—" : "After reveal"}</p>
                     }
                   </div>
-                  {/* NFT Status — derived from lifecycle, industry-standard */}
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "#94a3b8" }}>NFT Status</p>
                     {(() => {
@@ -234,7 +212,6 @@ export default function NftHistoryModal({
                       return <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "#f8fafc", color: "#94a3b8", border: "1px solid #e2e8f0" }}>○ Pre-mint</span>;
                     })()}
                   </div>
-                  {/* Chain — only meaningful once minted */}
                   {viewRecord.tokenId != null && (
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "#94a3b8" }}>Chain</p>
@@ -253,7 +230,6 @@ export default function NftHistoryModal({
                       </div>
                     </div>
                   )}
-                  {/* Price — only show after wave is assigned */}
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "#94a3b8" }}>Mint Price</p>
                     <p className="text-sm font-semibold leading-tight" style={{ color: viewRecord.waveNumber == null ? "#94a3b8" : viewRecord.effectivePriceEth != null ? "#0f172a" : "#15803d" }}>
@@ -264,7 +240,6 @@ export default function NftHistoryModal({
                           : "Free"}
                     </p>
                   </div>
-                  {/* Mint Type */}
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "#94a3b8" }}>Mint Type</p>
                     {(() => {
@@ -276,7 +251,6 @@ export default function NftHistoryModal({
                       return <span style={{ color: "#94a3b8" }}>—</span>;
                     })()}
                   </div>
-                  {/* Wave */}
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "#94a3b8" }}>Wave</p>
                     <p className="text-sm font-semibold leading-tight" style={{ color: viewRecord.waveNumber != null ? "#0f172a" : "#94a3b8" }}>
@@ -285,7 +259,6 @@ export default function NftHistoryModal({
                         : "—"}
                     </p>
                   </div>
-                  {/* Rarity Tier, Score + Rank — all hidden until revealed */}
                   {(() => {
                     const tier = viewRecord.isRevealed && viewRecord.rarityTier
                       ? viewRecord.rarityTier.charAt(0).toUpperCase() + viewRecord.rarityTier.slice(1)
@@ -316,7 +289,6 @@ export default function NftHistoryModal({
                       </>
                     );
                   })()}
-                  {/* Last Sale */}
                   {viewRecord.lastSalePriceEth != null && (
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "#94a3b8" }}>Last Sale</p>
@@ -349,7 +321,6 @@ export default function NftHistoryModal({
 
           <div className="p-5 space-y-4">
 
-            {/* Wave Schedule */}
             {viewRecord.waveNumber != null && (
               <div className="rounded-2xl overflow-hidden bg-white" style={{ border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
                 <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid #f1f5f9" }}>
@@ -372,7 +343,6 @@ export default function NftHistoryModal({
                     return <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "#f8fafc", color: "#94a3b8" }}>○ Pending</span>;
                   })()}
                 </div>
-                {/* Progress track */}
                 {(() => {
                   const isResTrack = viewRecord.deliveryStatusCode === "treasury_pending" || (viewRecord.tokenId == null && viewRecord.waveRevealScheduledAt != null);
                   const isTreasury = viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred";
@@ -401,7 +371,6 @@ export default function NftHistoryModal({
                       </div>
                     </div>
                   ))}
-                  {/* Reveal / Reserved Date */}
                   {(() => {
                     const isRes = viewRecord.deliveryStatusCode === "treasury_pending" || (viewRecord.tokenId == null && viewRecord.waveRevealScheduledAt != null);
                     const dotColor = viewRecord.isRevealed ? "#16a34a" : isRes ? "#b45309" : "#7c3aed";
@@ -421,7 +390,6 @@ export default function NftHistoryModal({
                       </div>
                     );
                   })()}
-                  {/* Treasury Wallet — only for admin/treasury mints physically moved to treasury */}
                   {(viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred") && (
                     <div className="flex items-start gap-2">
                       <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: "#0d9488" }} />
@@ -444,7 +412,6 @@ export default function NftHistoryModal({
               </div>
             )}
 
-            {/* Lifecycle Timeline */}
             <div className="rounded-2xl overflow-hidden bg-white" style={{ border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
               <div className="flex items-center gap-2 px-5 py-3" style={{ borderBottom: "1px solid #f1f5f9" }}>
                 <svg className="w-4 h-4" style={{ color: "#10b981" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -454,11 +421,6 @@ export default function NftHistoryModal({
               </div>
               {[
                 { label: "Generated", date: viewRecord.createdAt, color: "#6366f1", desc: "NFT created in DB from generator", txHash: null },
-                // A "Reserved" step only ever applies to a token that was
-                // genuinely unsold (never bought by a customer) -- gate on
-                // this token's own delivery status, not the wave's shared
-                // reveal-schedule date (every token in the wave has that,
-                // customer-purchased ones included).
                 { label: "Reserved", date: (["treasury_wallet", "transferred", "treasury_pending"].includes(viewRecord.deliveryStatusCode ?? "") || (viewRecord.tokenId == null && viewRecord.deliveryStatusCode !== "sold")) ? (viewRecord.waveRevealScheduledAt ?? viewRecord.createdAt ?? null) : null, color: "#b45309", desc: (viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred") ? "Wave closed — NFT was unsold, reserved for treasury" : "Wave closed — NFT unsold, awaiting mint & move to treasury", txHash: null },
                 { label: "Minted", date: viewRecord.mintedAt, color: "#7c3aed", desc: (viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred") ? "Minted on-chain via treasury close" : "Minted on-chain to buyer wallet", txHash: viewRecord.mintTxHash },
                 { label: "Revealed", date: viewRecord.revealedAt, color: "#8b5cf6", desc: "Artwork revealed, blind box opened", txHash: viewRecord.waveRevealTxHash },
@@ -468,7 +430,6 @@ export default function NftHistoryModal({
                 const isLast = i === arr.length - 1;
                 return (
                   <div key={step.label} className="flex gap-4 px-5 py-3.5" style={{ borderTop: i > 0 ? "1px solid #f8fafc" : undefined }}>
-                    {/* Step indicator */}
                     <div className="flex flex-col items-center flex-shrink-0 pt-0.5" style={{ width: 32 }}>
                       <div className="w-7 h-7 rounded-full flex items-center justify-center"
                         style={{ background: `${step.color}18`, border: `2px solid ${step.color}` }}>
@@ -480,7 +441,6 @@ export default function NftHistoryModal({
                         <div className="w-px flex-1 mt-1" style={{ background: "#e2e8f0", minHeight: 12 }} />
                       )}
                     </div>
-                    {/* Content */}
                     <div className="flex-1 min-w-0 pb-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-bold" style={{ color: "#0f172a" }}>{step.label}</span>
@@ -495,7 +455,6 @@ export default function NftHistoryModal({
                       </div>
                       <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>{step.desc}</p>
                     </div>
-                    {/* Badge — last step = current active state, all others = done */}
                     <div className="flex-shrink-0 pt-0.5">
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                         style={isLast
@@ -509,7 +468,6 @@ export default function NftHistoryModal({
               })}
             </div>
 
-            {/* Blind Box notice */}
             {!viewRecord.isRevealed && (
               <div className="rounded-2xl flex items-start gap-3 p-4 bg-white"
                 style={{ border: "1px solid #fde68a", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
@@ -530,7 +488,6 @@ export default function NftHistoryModal({
               </div>
             )}
 
-            {/* Traits — OpenSea style with rarity % */}
             {viewRecord.isRevealed && viewRecord.traits && Object.keys(viewRecord.traits).length > 0 && (
               <div className="rounded-2xl overflow-hidden bg-white" style={{ border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
                 <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid #f1f5f9" }}>
@@ -593,14 +550,11 @@ export default function NftHistoryModal({
           </div>
         </div>
 
-        {/* ── Footer ──────────────────────────────────────────────────────── */}
         <div className="flex-shrink-0 px-5 pt-4 pb-3 bg-white" style={{ borderTop: "1px solid #e2e8f0" }}>
 
-          {/* ── Lifecycle action panel — all 4 treasury states ── */}
           {(() => {
             const { tokenId, deliveryStatusCode, waveNumber, mintType } = viewRecord;
 
-            // Only reserved unminted non-customer NFTs show the Mint & Move panel
             if (tokenId == null && deliveryStatusCode === "treasury_pending" && mintType !== "free" && mintType !== "paid") return (
               <div className="mb-4 p-3 rounded-xl" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
                 <p className="text-xs font-bold mb-1" style={{ color: "#1d4ed8" }}>⬡ Mint &amp; Move to Treasury / Custom Wallet</p>
@@ -638,7 +592,6 @@ export default function NftHistoryModal({
 
             return null;
           })()}
-          {/* ── Close row ─────────────────────────────────────────────────── */}
           <div className="flex items-center justify-end">
             <button onClick={onClose}
               className="px-5 py-2 text-sm font-semibold rounded-lg"

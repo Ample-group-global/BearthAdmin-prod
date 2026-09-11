@@ -4,33 +4,16 @@ import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useLayerFiles } from '../LayerFilesContext';
 
-// Generic: normalizes any folder/sheet name the same way labels are derived
-// elsewhere in this file (strip a leading number+separator, case/whitespace-
-// insensitive) so an Excel sheet name matches a layer folder name regardless
-// of what this particular collection's layers happen to be called.
 function normalizeLayerKey(s) {
   return String(s || '').replace(/^\d+[-_]/, '').trim().toLowerCase();
 }
 
-// Generic trait-names + weights extractor — works with ANY workbook where
-// each sheet name matches a layer folder and has a header row with a column
-// whose header text contains "name" (e.g. "Trait Name", "Name", "Asset
-// Name") and, optionally, one containing "weight" (e.g. "Weight (%)").
-// Never assumes a specific column position or specific sheet/layer names —
-// different collections will have completely different layers/traits.
-// Weight cells may be a plain number or a percentage string ("2.78 %") —
-// both parse to the same underlying number; percentages aren't normalized
-// to 0-1 since nft_traits.rarity_weight is a relative weight, not a
-// probability (weights only need to be proportionally correct to each
-// other within a layer, not sum to 100).
 function parseWeightCell(v) {
   if (v === '' || v == null) return null;
   const n = Number(String(v).replace('%', '').trim());
   return Number.isFinite(n) ? n : null;
 }
 
-// Any spelling/casing of the app's own four tiers — matched loosely since an
-// artist's sheet is free-text, not a constrained dropdown on her end.
 const VALID_RARITY_LABELS = ['legendary', 'epic', 'rare', 'common'];
 function parseRarityCell(v) {
   const s = String(v ?? '').trim().toLowerCase();
@@ -43,37 +26,14 @@ function parseTraitNamesFromWorkbook(workbook) {
   const resultRarities = {};
   const resultIds = {};
   for (const sheetName of workbook.SheetNames) {
-    // raw: false — a weight cell the artist formatted as an Excel percentage
-    // (not typed as text) stores its underlying value as a fraction (2.78%
-    // is stored as 0.0278); reading raw would silently import a ~100x-wrong
-    // weight for that one cell. raw: false always returns the same formatted
-    // display string ("2.78%") regardless of how the cell was entered, so
-    // weight/name/rarity all parse consistently either way — and the same
-    // safety applies to whatever raw type Excel stored the ID/stem column
-    // as (plain text, a number, a date-like autoformat) since raw:false
-    // always yields the displayed string either way.
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
     if (!rows.length) continue;
     const header = rows[0].map(h => String(h || '').trim().toLowerCase());
     const nameColIdx = header.findIndex(h => h.includes('name'));
-    if (nameColIdx === -1) continue; // no name-like column on this sheet — not a trait sheet
+    if (nameColIdx === -1) continue;
     const weightColIdx = header.findIndex(h => h.includes('weight'));
-    // "rarity" alone, not "rarityweight" etc. — the weight column above
-    // already covers anything with "weight" in it, so this only matches a
-    // separate classification column (e.g. "Rarity", "Rarity Tier").
     const rarityColIdx = header.findIndex(h => h.includes('rarity') && !h.includes('weight'));
-    // "Trait ID" / "Stem" / "Code" — the artist's own file-code column
-    // (e.g. "0-1"), when present. Lets rows be matched to the actual
-    // uploaded file by real ID instead of assuming Excel row order exactly
-    // matches the files' sorted order — see below.
     const idColIdx = header.findIndex(h => h.includes('id') || h.includes('stem') || h.includes('code'));
-    // Stop at the first fully-blank row rather than skipping over it — a
-    // mid-sheet blank row silently shifts every later name onto the wrong
-    // trait (count still "matches" if we just filtered blanks out, since the
-    // filter runs the same way on every re-parse — nothing would catch it).
-    // Stopping short instead makes the row count come up short, which trips
-    // the existing count-validation in applyTraitNamesFromExcel and refuses
-    // to apply anything rather than silently mislabeling traits.
     const names = [];
     const weights = [];
     const rarities = [];
@@ -90,34 +50,14 @@ function parseTraitNamesFromWorkbook(workbook) {
     if (names.length) {
       const key = normalizeLayerKey(sheetName);
       result[key] = names;
-      // Only keep weights if EVERY row had a valid number — a partially-
-      // filled weight column is more likely a data-entry gap than intentional,
-      // and applying nulls would silently reset those traits to default.
       if (weights.length && weights.every(w => w != null)) resultWeights[key] = weights;
-      // Same guard for rarity — a row with unrecognized text (parseRarityCell
-      // returned null) is more likely a typo than "leave this one live-computed",
-      // and applying the rest positionally around a hole would misalign every
-      // trait after it.
       if (rarities.length && rarities.every(t => t != null)) resultRarities[key] = rarities;
-      // Same guard for IDs — a blank ID cell means this sheet can't be
-      // trusted for ID-based matching, fall back to positional.
       if (ids.length && ids.every(id => id)) resultIds[key] = ids;
     }
   }
   return { names: result, weights: resultWeights, rarities: resultRarities, ids: resultIds };
 }
 
-// Optional: a Force/Block rules sheet, generic like the trait-name parser
-// above — matched by header content (a column containing "layer" under an
-// "if"/"then" pair, plus a "type" column), not a hardcoded sheet name, so
-// any workbook using this shape works regardless of what the artist titled
-// the sheet (e.g. "Rules Format", "Conflicts", "Force-Block"). Groups rows
-// into the same { id, type, ifLayer, ifTrait, thenLayer, thenTraits: [] }
-// shape RulesTabContent already saves today (one entry per group of "then"
-// traits, not one per row) — see normalizeRules() in RulesTabContent.tsx.
-// Rows are validated per-row, not all-or-nothing like the trait-name sheet:
-// a single bad row shouldn't discard 400+ good ones, so invalid rows are
-// just skipped and counted for the summary message.
 function parseRulesFromWorkbook(workbook, knownLayerKeys, knownStemsByLayer) {
   for (const sheetName of workbook.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
@@ -128,12 +68,12 @@ function parseRulesFromWorkbook(workbook, knownLayerKeys, knownStemsByLayer) {
     const typeIdx      = header.findIndex(h => h.includes('type'));
     const thenLayerIdx = header.findIndex(h => h.includes('then') && h.includes('layer'));
     const thenTraitIdx = header.findIndex(h => h.includes('then') && h.includes('trait'));
-    if ([ifLayerIdx, ifTraitIdx, typeIdx, thenLayerIdx, thenTraitIdx].includes(-1)) continue; // not a rules sheet
+    if ([ifLayerIdx, ifTraitIdx, typeIdx, thenLayerIdx, thenTraitIdx].includes(-1)) continue;
 
     const grouped = new Map();
     let skipped = 0;
     for (const r of rows.slice(1)) {
-      if (!r.some(c => String(c ?? '').trim() !== '')) continue; // blank row — just skip, unlike the trait sheet this isn't positional
+      if (!r.some(c => String(c ?? '').trim() !== '')) continue;
       const ifLayer   = normalizeLayerKey(r[ifLayerIdx]);
       const ifTrait   = String(r[ifTraitIdx] ?? '').trim();
       const typeRaw   = String(r[typeIdx] ?? '').trim().toLowerCase();
@@ -141,9 +81,6 @@ function parseRulesFromWorkbook(workbook, knownLayerKeys, knownStemsByLayer) {
       const thenTrait = String(r[thenTraitIdx] ?? '').trim();
       const type = typeRaw === 'force' ? 'force' : (typeRaw === 'block' || typeRaw === 'exclude') ? 'exclude' : null;
       if (!ifLayer || !ifTrait || !thenLayer || !thenTrait || !type) { skipped++; continue; }
-      // Guard against a typo'd layer/trait reference silently saving as a
-      // rule that can never fire — only validate when we actually know the
-      // real layers/stems for this upload (i.e. files were also dropped).
       if (knownLayerKeys && (!knownLayerKeys.has(ifLayer) || !knownLayerKeys.has(thenLayer))) { skipped++; continue; }
       if (knownStemsByLayer) {
         const ifStems = knownStemsByLayer.get(ifLayer);
@@ -168,7 +105,6 @@ function deriveLabelFromFolder(fname) {
 }
 
 function clientGetName(folder, stem, rel) {
-  // Nested path (e.g. "10-hand/10-6-panda/10-6-7.png") → extract name from parent dir
   if (rel) {
     const parts = rel.split('/');
     if (parts.length >= 3) {
@@ -181,29 +117,18 @@ function clientGetName(folder, stem, rel) {
         return d1.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
     }
   }
-  // Numeric stem (e.g. "1-7", "2-14") — use the stem as-is.
-  // DB holds proper names set by the artist; this is just a local placeholder.
   if (/^\d+-\d+$/.test(stem)) return stem;
-  // Non-numeric: derive a readable label from the stem text
   const inner = stem.replace(/^\d+[-_]/, '') || stem;
   return inner.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim() || stem;
 }
 
-// Parse layer structure from dropped files client-side (mirrors server scanLayers).
-// excelData is optional — { names: {[normalizedLayerKey]: string[]}, weights:
-// {[normalizedLayerKey]: number[]} } from an artist-supplied trait workbook
-// (any layer set, any sheet/column naming — see parseTraitNamesFromWorkbook).
-// Names/weights are only applied when a layer's matched sheet has exactly as
-// many rows as that layer has traits; otherwise falls back to the existing
-// stem-derived placeholder name / default weight of 1, same as when no Excel
-// is provided.
 function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
   const excelNames = excelData.names ?? {};
   const excelWeights = excelData.weights ?? {};
   const excelRarities = excelData.rarities ?? {};
   const excelIds = excelData.ids ?? {};
-  const groups = new Map(); // folder -> [{ file, stem, rel }]
-  const fileMap = new Map(); // rel -> File
+  const groups = new Map();
+  const fileMap = new Map();
 
   for (const file of files) {
     const wpath = file.webkitRelativePath || file.name;
@@ -213,10 +138,6 @@ function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
     if (!file.name.match(/\.(png|webp|jpg|jpeg|gif)$/i)) continue;
 
     const layerName = parts[layerIdx];
-    // Every drop gets its own storage namespace (sessionPrefix) so this
-    // upload's keys can never collide with — or be silently clobbered by —
-    // any other collection's or test run's identically-named layer folders
-    // in the shared bucket. See handleFolderUpload for where this is minted.
     const rel = sessionPrefix ? `${sessionPrefix}/${parts.slice(layerIdx).join('/')}` : parts.slice(layerIdx).join('/');
     const stem = file.name.replace(/\.(png|webp|jpg|jpeg|gif)$/i, '');
 
@@ -251,27 +172,6 @@ function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
     const raritiesForLayer = excelRarities[layerKey];
     const idsForLayer = excelIds[layerKey];
 
-    // Prefer matching by the artist's own Trait ID/Stem column value against
-    // each file's real stem — robust to the Excel rows being in a different
-    // order than the files' sorted order (alphabetized, manually reordered,
-    // rows inserted/removed). Row-position matching used to be the ONLY
-    // path: if a sheet's row order ever didn't match the files' sorted
-    // order, names/weights/rarities would silently attach to the wrong
-    // trait with no warning, since row COUNT matching alone can't catch
-    // that.
-    //
-    // But the ID column isn't always a file-stem at all — some sheets use
-    // the artist's own catalog numbering (e.g. "46023"), unrelated to how
-    // the files happen to be named on disk ("1-1.png"). Worse, a sheet can
-    // MIX the two schemes row-by-row: confirmed live, one layer's Excel had
-    // its first row ("None", the default/base item) keyed by real file-stem
-    // ("6-0") while every other row used a catalog number — so ID matching
-    // silently succeeded for 1 trait and defaulted the other 23 with no
-    // warning, while the UI still reported "weights applied" for the whole
-    // layer. A partial match means the ID column can't be trusted for this
-    // sheet at all (positional order is then the only reliable
-    // correspondence) — only treat IDs as authoritative when EVERY trait's
-    // stem is found, otherwise fall back to positional for the whole layer.
     const rowByStem = idsForLayer && idsForLayer.length === assets.length
       ? new Map(idsForLayer.map((id, i) => [id, i]))
       : null;
@@ -280,16 +180,12 @@ function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
     if (idMatchCount === assets.length && idMatchCount > 0) {
       assets.forEach(a => {
         const i = rowByStem.get(a.stem);
-        if (i == null) return; // this file's stem has no matching Trait ID row — leave its default
+        if (i == null) return;
         if (namesForLayer)    a.name = namesForLayer[i];
         if (weightsForLayer)  a.defaultWeight = weightsForLayer[i];
         if (raritiesForLayer) a.rarityTier = raritiesForLayer[i];
       });
     } else {
-      // Positional fallback — only when the matched sheet's row count
-      // exactly equals this layer's trait count; a mismatch means the
-      // sheet doesn't actually correspond 1:1 to these files, so we don't
-      // guess.
       if (namesForLayer && namesForLayer.length === assets.length) {
         assets.forEach((a, i) => { a.name = namesForLayer[i]; });
       }
@@ -301,7 +197,6 @@ function parseLayersFromFiles(files, excelData = {}, sessionPrefix = '') {
       }
     }
 
-    // Disambiguate duplicate display names (same logic as server-side buildCache)
     const nameCounts = {};
     for (const a of assets) nameCounts[a.name] = (nameCounts[a.name] ?? 0) + 1;
     const nameIdx = {};
@@ -337,12 +232,10 @@ const BLOCKCHAINS = [
   { value: 'xrp',      label: 'XRP' },
 ];
 
-// Recursively collect all files from a DataTransferEntry (folder or file)
 function readEntry(entry) {
   return new Promise(resolve => {
     if (entry.isFile) {
       entry.file(f => {
-        // Attach full path so we can determine layer folder later
         Object.defineProperty(f, 'webkitRelativePath', { value: entry.fullPath.replace(/^\//, ''), writable: false });
         resolve([f]);
       }, () => resolve([]));
@@ -356,7 +249,7 @@ function readEntry(entry) {
             resolve(nested.flat());
           } else {
             allEntries.push(...batch);
-            readAll(); // readEntries may return < 100 items; keep reading
+            readAll();
           }
         }, () => resolve([]));
       };
@@ -374,59 +267,22 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
   const [uploadMsg,     setUploadMsg]     = useState('');
   const [uploadFailedLayers, setUploadFailedLayers] = useState<string[]>([]);
   const [symbolConflict, setSymbolConflict] = useState('');
-  // Tracks the REAL background S3 upload — separate from uploadDone, which
-  // flips true the instant files are parsed client-side (for a snappy UI)
-  // long before doServerUpload() below has actually finished. Continuing
-  // past Settings while this is still 'uploading' let a real generation run
-  // against layers whose images never made it to Filebase — the compositor
-  // then silently rendered whatever stale object already sat at that S3 key
-  // instead of failing loudly. 'idle' means no folder has been dropped yet
-  // (layers are optional at this stage), so it must not block Save & Continue.
   const [serverUploadStatus, setServerUploadStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
   const [errors,        setErrors]        = useState({});
-  // "Name of each NFT" defaults to bare '#{{id}}' with no collection identity
-  // in it -- Bearth V7 shipped every metadata.json as "#1" instead of
-  // "Bearth #1" because nothing ever nudged this field once Collection Name
-  // was filled in, whether by a human or by the Playwright automation script
-  // (root-caused 2026-09-03: neither of the two production scripts, nor a
-  // human filling the form by hand, gets a collection-identifying name
-  // unless they think to edit this specific field). Auto-derive it from the
-  // Collection Name as the user types, exactly like a slug field, so the
-  // preview is always meaningful by default -- but stop the moment the user
-  // edits Name Format directly, so a deliberate custom format is never
-  // silently overwritten.
   const [nameFormatEdited, setNameFormatEdited] = useState(false);
-  // Same reasoning as nameFormatEdited above -- auto-suggest Token Symbol
-  // from Collection Name (same sanitize rule as manual entry: uppercase,
-  // alphanumeric only, max 10 chars) as the user types, but stop the moment
-  // she edits Token Symbol directly so a deliberate custom symbol is never
-  // silently overwritten.
   const [symbolEdited, setSymbolEdited] = useState(false);
   const [excelData,     setExcelData]     = useState({ names: {}, weights: {}, rarities: {} });
   const [excelFileName, setExcelFileName] = useState('');
   const [excelMsg,      setExcelMsg]      = useState('');
-  // Raw (not-yet-validated) rule rows from an Excel uploaded BEFORE the asset
-  // folder — held here so handleFolderUpload can re-validate + apply them
-  // against real file stems once they're known, same reasoning as excelData
-  // existing for names/weights/rarity.
   const pendingExcelRulesRef = useRef(null);
   const folderRef = useRef(null);
   const excelRef  = useRef(null);
-  const lastFilesRef = useRef(null); // remembers the dropped image files so a
-                                      // later-uploaded Excel can re-apply names
-  const sessionPrefixRef = useRef(''); // the unique storage namespace minted for
-                                        // the current drop — a later Excel-driven
-                                        // re-parse of the same files must reuse
-                                        // this exact value, or the re-parsed
-                                        // `rel`s silently drop the prefix and no
-                                        // longer match where the files actually
-                                        // live in storage (every trait then 404s
-                                        // at generation/export time).
+  const lastFilesRef = useRef(null);
+  const sessionPrefixRef = useRef('');
   const { storeFiles } = useLayerFiles();
 
   const set = (k, v) => {
     onChange({ ...collection, [k]: v });
-    // Clear the error for this field as the user edits it
     if (errors[k]) setErrors(prev => { const n = { ...prev }; delete n[k]; return n; });
   };
 
@@ -452,19 +308,12 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     if (!files.length) return;
     setSymbolConflict('');
 
-    // Every session prefix now leads with the Token Symbol (e.g. "BV9999-...")
-    // so a bucket folder can be traced back to its collection at a glance —
-    // previously it was pure random noise (e.g. "umtcbemz2vrn8q1"), no way to
-    // tell which collection a folder belonged to without cross-checking the DB.
     const symbol = (collection.symbol ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!symbol) {
       setSymbolConflict('Set a Token Symbol before uploading layers — it identifies this upload in storage.');
       return;
     }
 
-    // Block a second upload under a symbol that's already in storage, rather
-    // than silently accumulating duplicate layer sets under different random
-    // prefixes with no way to tell which one is "the" collection.
     setUploading(true);
     setUploadMsg('Checking symbol…');
     try {
@@ -477,28 +326,18 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
         return;
       }
     } catch {
-      // Check endpoint unreachable — fail open rather than block a legitimate
-      // upload on a network blip; the collision this check prevents is a
-      // storage-hygiene concern, not data corruption (each prefix is still
-      // unique via the random suffix below).
     }
 
     setUploadMsg('Reading files…');
     lastFilesRef.current = files;
 
-    // A fresh, unique namespace for THIS drop, prefixed with the Token Symbol
-    // for identification — see parseLayersFromFiles.
     const sessionPrefix = `${symbol}-u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     sessionPrefixRef.current = sessionPrefix;
 
-    // ── 1. Parse layers client-side — instant ────────────────────────────────
     const { layers: parsedLayers, fileMap } = parseLayersFromFiles(files, excelData, sessionPrefix);
     storeFiles(fileMap);
     onLayersChange?.(parsedLayers);
 
-    // An Excel workbook uploaded BEFORE this folder may have included a rules
-    // sheet we couldn't validate yet (no real stems to check against at that
-    // point) — re-parse it now that they're known.
     if (pendingExcelRulesRef.current) {
       const knownLayerKeys = new Set(parsedLayers.map(l => normalizeLayerKey(l.folder)));
       const knownStemsByLayer = new Map(parsedLayers.map(l => [normalizeLayerKey(l.folder), new Set(l.assets.map(a => a.stem))]));
@@ -510,21 +349,12 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
       }
     }
 
-    // Show success immediately — no need to block the UI on the network
     setUploading(false);
     setUploadDone(true);
     setUploadFailedLayers([]);
     setServerUploadStatus('idle');
     setUploadMsg(`${parsedLayers.length} layers imported!`);
 
-    // ── 2. Upload to S3 in the background, but await + verify each layer ───────
-    // Previously these were fire-and-forget with .catch(() => {}), so if any
-    // single layer's request failed (network blip, timeout, whatever) its
-    // images silently never reached Filebase while the DB still recorded
-    // the trait rows as if nothing was wrong — confirmed live 2026-08-17,
-    // two full layers came back with zero uploaded objects and no error
-    // anywhere. Now every layer's result is checked and failures surface in
-    // the UI instead of vanishing.
     const doServerUpload = async () => {
       setServerUploadStatus('uploading');
       const groups: Record<string, { file: File; subpath: string }[]> = {};
@@ -540,22 +370,11 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
       }
       if (Object.keys(groups).length === 0) { setServerUploadStatus('idle'); return; }
 
-      // Large layers are split into byte-bounded chunks — a single request
-      // carrying an entire big layer (e.g. 50+ trait PNGs) can exceed typical
-      // serverless request-body limits and fail outright, even though nothing
-      // about the layer itself is invalid. This budget stays safely under the
-      // smallest common platform default (4.5MB) regardless of how large a
-      // future layer set gets, so upload reliability never depends on a
-      // particular collection's file sizes or count.
       const CHUNK_BYTE_BUDGET = 3 * 1024 * 1024;
       const totalFiles = Object.values(groups).reduce((n, e) => n + e.length, 0);
       let uploadedSoFar = 0;
       setUploadMsg(`Saving assets to storage… 0/${totalFiles} files`);
 
-      // Numeric-suffix order (1-1, 1-2, ... 1-24), not whatever order the
-      // browser's directory read returned (often alphabetical: 1-1, 1-10,
-      // 1-11, ..., 1-2) — files must reach the server, and land in the
-      // bucket, in the same order an artist would list them.
       function stemOf(entry: { file: File; subpath: string }) {
         const name = entry.subpath || entry.file.name;
         return name.replace(/\.[^.]+$/, '');
@@ -597,10 +416,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
           setUploadMsg(`Saving assets to storage… ${uploadedSoFar}/${totalFiles} files`);
         }
 
-        // Stale-file cleanup + real-bucket verification, run once every
-        // chunk for this layer has landed — see /upload/finalize. Its
-        // response confirms every uploaded key is actually present in the
-        // bucket right now, not just that the PUT calls reported success.
         const finalizeRes = await fetch('/api/upload/finalize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -614,13 +429,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
         return layer;
       }
 
-      // 2 layers concurrent, each still processed in numeric folder order
-      // (00_BACKGROUND, 01_BEAR HEAD, ...) via the sorted queue below --
-      // fully serial (1) was too slow on this machine's current bandwidth;
-      // the old default (3, uncapped per-file concurrency too) is what
-      // caused real multi-layer-burst failures noted below. Correctness
-      // doesn't depend on completion order -- /upload/finalize verifies
-      // every expected file actually landed, regardless of order.
       const LAYER_UPLOAD_CONCURRENCY = 2;
       const layerEntries = Object.entries(groups).sort(([a], [b]) => naturalStemCompare(a, b));
       const results: PromiseSettledResult<string>[] = new Array(layerEntries.length);
@@ -643,10 +451,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
         if (result.status !== 'rejected') return;
         const layer = layerEntries[i][0];
         failed.push(layer);
-        // Logs the actual reason (timeout, HTTP 500, count mismatch...),
-        // not just the layer name -- Promise.allSettled already had this,
-        // it was just being discarded, making every failure equally
-        // unexplainable after the fact.
         console.error(`[upload] layer "${layer}" failed:`, result.reason);
       });
       if (failed.length) {
@@ -660,14 +464,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     doServerUpload();
   }
 
-  // Optional: artist supplies a trait-names (+ optional weight/rarity, +
-  // optional Force/Block rules) workbook (any layer set, any sheet/column
-  // layout). Re-parses already-dropped image files (if any) so names/
-  // weights/rules apply whether the Excel arrives before or after the image
-  // folder. Rules apply through the exact same save path as manually adding
-  // them in the Organise tab's Rules panel (onConflictsChange -> the page's
-  // existing saveConflicts) — nothing about how rules are stored changes,
-  // only where the initial set can come from.
   async function handleExcelUpload(file) {
     if (!file) return;
     setExcelMsg('Reading workbook…');
@@ -681,13 +477,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
       setExcelData(data);
       setExcelFileName(file.name);
 
-      // Rules sheet detection is independent of whether a trait-name sheet
-      // matched (a workbook can contain only a rules sheet) — but validating
-      // rows against real stems must NEVER re-parse layers with THIS
-      // upload's (possibly empty) names/weights/rarity data, or a
-      // non-matching Excel would silently wipe out whatever an earlier,
-      // successful Excel upload already applied. Use excelData (the last
-      // known-good enrichment) for that probe parse, never `data`.
       if (!matchedSheets) {
         let probeLayers = null;
         if (lastFilesRef.current) {
@@ -720,9 +509,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
         onLayersChange?.(parsedLayers);
       }
 
-      // Rules: validate against real stems when the folder is already known;
-      // otherwise remember the raw parse and let handleFolderUpload apply it
-      // once the folder arrives (mirrors excelData's order-independence).
       const knownLayerKeys = parsedLayers ? new Set(parsedLayers.map(l => normalizeLayerKey(l.folder))) : null;
       const knownStemsByLayer = parsedLayers
         ? new Map(parsedLayers.map(l => [normalizeLayerKey(l.folder), new Set(l.assets.map(a => a.stem))]))
@@ -735,7 +521,7 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
           pendingExcelRulesRef.current = null;
           ruleNote = `, ${parsedRules.length} rule(s) imported${skippedRules ? ` (${skippedRules} row(s) skipped — unrecognized layer/trait reference)` : ''}`;
         } else {
-          pendingExcelRulesRef.current = wb; // re-parse once real stems are known
+          pendingExcelRulesRef.current = wb;
           ruleNote = `, rules will apply once you drop the layer folder`;
         }
       }
@@ -748,13 +534,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
         const weightNote = weightSheets ? `, weights applied for ${weightSheets} layer(s)` : '';
         const rarityNote = raritySheets ? `, rarity applied for ${raritySheets} layer(s)` : '';
 
-        // Warn when a sheet's own Trait ID column didn't line up with the
-        // uploaded files' real names — the artist's own workbook (rather
-        // than one started from "Download matching template") is the one
-        // case this can happen, since the template's ID column is always
-        // prefilled with the real file stem. Falling back to row-position
-        // still applies the values, but only the template's ID column is
-        // GUARANTEED correct, so this stays visible instead of silent.
         const idMismatchLayers = parsedLayers.filter(l => {
           const ids = data.ids[normalizeLayerKey(l.folder)];
           if (!ids || ids.length !== l.assets.length) return false;
@@ -775,15 +554,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     }
   }
 
-  // Generates a workbook matching whatever layers are currently dropped —
-  // one sheet per layer folder, all 4 columns the parser understands (Trait
-  // ID, Trait Name, Rarity, Weight (%)) so an artist filling this in gets
-  // full name+weight+rarity import, not just names. Trait ID is prefilled
-  // with the actual file stem (not a made-up reference number) so ID-based
-  // matching is GUARANTEED to succeed for every row — do not edit that
-  // column. This deliberately differs from how some artists' own workbooks
-  // are keyed (e.g. a personal catalog number unrelated to file names,
-  // confirmed live to cause silent per-row import failures) by construction.
   function handleDownloadTemplate() {
     if (!lastFilesRef.current) {
       setExcelMsg('Drop your assets folder first — the template is built to match your actual layers and trait counts.');
@@ -798,11 +568,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
       const sheetName = layer.folder.slice(0, 31).replace(/[\\/?*[\]:]/g, '-');
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     }
-    // Build the file ourselves and trigger the download via a manually-made
-    // anchor tag instead of XLSX.writeFile() — its internal browser-vs-node
-    // detection doesn't reliably survive Next.js/Turbopack bundling, which
-    // was producing a UUID-named file with no extension instead of a real
-    // filename (confirmed live: chrome://downloads showed a bare GUID).
     const wbArray = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
     const blob = new Blob([wbArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
@@ -820,7 +585,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
     setDragOver(false);
     const items = [...e.dataTransfer.items];
     const entries = items.map(i => i.webkitGetAsEntry?.()).filter(Boolean);
-    // Dropping a folder = replace; dropping individual files = merge
     const hasFolder = entries.some(en => en.isDirectory);
     if (entries.length) {
       const nested = await Promise.all(entries.map(readEntry));
@@ -833,7 +597,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
   return (
     <div className="setup-page">
 
-      {/* Session restore banner — informational only; destructive reset is in the footer */}
       {sessionRestored && collectionId && (
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
@@ -861,7 +624,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
 
       <div className="setup-two-col">
 
-        {/* ── Left: form ── */}
         <div className="setup-left">
           <div className="setup-section-head">Collection Settings</div>
 
@@ -976,7 +738,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
             {(errors.width || errors.height) && <span className="field-error">{errors.width || errors.height}</span>}
           </div>
 
-          {/* Artwork Optional */}
           <div className="setup-artwork">
             <div className="setup-artwork-title">Import Artwork Layers</div>
             <div className="setup-artwork-hint">
@@ -1042,10 +803,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
               onChange={e => e.target.files?.length && handleFolderUpload([...e.target.files], true)}
             />
 
-            {/* Optional trait-names workbook — any layer set, any sheet/column
-                layout, matched generically by sheet-name↔folder-name and a
-                header containing "name". Falls back to file-stem naming when
-                not provided or when a sheet's row count doesn't match. */}
             <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <button
                 type="button"
@@ -1107,7 +864,6 @@ export default function CollectionSetup({ collection, onChange, onNext, onReset,
           </div>
         </div>
 
-        {/* ── Right: info panel ── */}
         <div className="setup-right">
           <div className="setup-info-title">Collection Settings</div>
           <div className="setup-info-sub">

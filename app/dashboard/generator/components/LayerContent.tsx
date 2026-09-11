@@ -53,7 +53,7 @@ function TraitNameEditor({ asset, folder, onRenamed }) {
 }
 
 export default function LayerContent({ layer, layerWeights, allWeights, supply, sessionPrefix, onWeightChange, onLayersChange, onGenerate, onOpenLayerModal }) {
-  const [view,      setView]      = useState(layer.assets.length > 0 ? 'advanced' : 'manage');  // 'manage' | 'advanced'
+  const [view,      setView]      = useState(layer.assets.length > 0 ? 'advanced' : 'manage');
   const [dragOver,  setDragOver]  = useState(false);
   const [uploading, setUploading] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
@@ -69,10 +69,6 @@ export default function LayerContent({ layer, layerWeights, allWeights, supply, 
     setUploading(true);
     const form = new FormData();
     form.append('layer', layer.folder);
-    // Without this, files added here land in an unscoped flat key
-    // (layer/filename) instead of this collection's own namespace — a
-    // different artist's own upload can then collide with it. See the
-    // upload route's own comment for the real incident this caused before.
     if (sessionPrefix) form.append('sessionPrefix', sessionPrefix);
     for (const f of imgs) form.append('files', f);
     await fetch('/api/upload', { method: 'POST', body: form });
@@ -117,7 +113,6 @@ export default function LayerContent({ layer, layerWeights, allWeights, supply, 
 
   return (
     <div className="lc-wrap">
-      {/* ── Header ── */}
       <div className="lc-header">
         <div className="lc-header-left">
           <span className="lc-layer-name">{layer.label}</span>
@@ -134,11 +129,9 @@ export default function LayerContent({ layer, layerWeights, allWeights, supply, 
         </div>
       </div>
 
-      {/* ── Manage / Upload view ── */}
       {view === 'manage' && (
         <div className="lc-manage">
           <div className="lc-upload-row">
-            {/* Upload drop zone */}
             <div
               className={`lc-upload-zone${dragOver ? ' drag-over' : ''}`}
               onClick={() => fileRef.current?.click()}
@@ -164,7 +157,6 @@ export default function LayerContent({ layer, layerWeights, allWeights, supply, 
               )}
             </div>
 
-            {/* Add Custom Asset card */}
             <div className={`lc-custom-asset${customOpen ? ' lc-custom-asset-open' : ''}`}>
               {customOpen ? (
                 <div className="lc-custom-form" onClick={e => e.stopPropagation()}>
@@ -195,7 +187,6 @@ export default function LayerContent({ layer, layerWeights, allWeights, supply, 
             </div>
           </div>
 
-          {/* Existing files list */}
           {layer.assets.length > 0 && (
             <div className="lc-file-grid">
               {[...layer.assets]
@@ -234,7 +225,6 @@ export default function LayerContent({ layer, layerWeights, allWeights, supply, 
         </div>
       )}
 
-      {/* ── Advanced: rarity weight sliders ── */}
       {view === 'advanced' && (
         <div className="lc-advanced-view">
           <AssetGrid

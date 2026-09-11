@@ -20,7 +20,6 @@ const ChainContext = createContext<ChainContextType>({
 export function ChainProvider({ children }: { children: ReactNode }) {
   const [activeChain, setActiveChainState] = useState<ChainConfig>(DEFAULT_CHAIN);
 
-  // Load saved chain on mount (client-side only)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);

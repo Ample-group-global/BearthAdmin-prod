@@ -39,7 +39,6 @@ export default function PermissionsPage() {
 
   return (
     <div className="p-5">
-      {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-base font-bold" style={{ color: "#24315f" }}>Permission Registry</h1>

@@ -24,7 +24,7 @@ async function handler(
     try {
       body = JSON.stringify(await req.json());
       headers["Content-Type"] = "application/json";
-    } catch { /* no body */ }
+    } catch {}
   }
 
   try {
