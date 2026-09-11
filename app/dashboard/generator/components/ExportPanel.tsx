@@ -165,6 +165,18 @@ export default function ExportPanel({ weights, layers: layersProp = [], collecti
   }
   useEffect(() => loadBuckets(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Default the bucket picker to this collection's own bucket ────────────
+  // nft_collections.filebase_bucket records which bucket a collection was
+  // actually assigned (see patch_v29) instead of leaving every export a
+  // fully manual pick -- the exact place a wrong click would put one
+  // collection's artwork in another collection's bucket. Only applies when
+  // nothing has been chosen yet and the bucket still exists, so it never
+  // overrides a manual selection or defaults to a deleted bucket.
+  useEffect(() => {
+    if (svrBucket || !collection?.filebaseBucket) return;
+    if (bucketList.includes(collection.filebaseBucket)) setSvrBucket(collection.filebaseBucket);
+  }, [collection?.filebaseBucket, bucketList, svrBucket]);
+
   // ── Auto-detect real resume point from the selected bucket ────────────────
   // "Resume from edition" used to default to 0 with no way to know the real
   // number without manually checking Filebase — if an artist's tab closed

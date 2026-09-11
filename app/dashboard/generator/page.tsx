@@ -26,6 +26,7 @@ const DEFAULT_COLLECTION = {
   nameFormat: '#{{id}}',
   width: undefined as number | undefined,
   height: undefined as number | undefined,
+  filebaseBucket: null as string | null,
 };
 
 export default function Page() {
@@ -146,6 +147,7 @@ export default function Page() {
             supply:      c.supply       ?? prev.supply,
             nameFormat:  c.nameFormat   ?? prev.nameFormat,
             format:      c.formatType   ?? prev.format,
+            filebaseBucket: c.filebaseBucket ?? prev.filebaseBucket,
           }));
           if (Array.isArray(c.conflictRules)) setConflicts(c.conflictRules);
         });
@@ -404,6 +406,7 @@ export default function Page() {
               supply:      c.supply       ?? prev.supply,
               nameFormat:  c.nameFormat   ?? prev.nameFormat,
               format:      c.formatType   ?? prev.format,
+              filebaseBucket: c.filebaseBucket ?? prev.filebaseBucket,
             }));
           })
           .catch(() => {});
