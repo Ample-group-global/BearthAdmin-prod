@@ -53,13 +53,14 @@ export default function CollectionControlsTab({ collectionId, onChain, config, e
   const [timelockLoading, setTimelockLoading] = useState(true);
 
   const loadTimelockStatus = useCallback(() => {
+    if (!collectionId) return;
     setTimelockLoading(true);
-    fetch("/api/nft-sell/collection/treasury/timelock-status", { credentials: "include" })
+    fetch(`/api/nft-sell/collection/treasury/timelock-status?collection_id=${collectionId}`, { credentials: "include" })
       .then(r => r.json())
       .then(d => setTimelock(d.status && !d.status.done ? d.status : null))
       .catch(() => {})
       .finally(() => setTimelockLoading(false));
-  }, []);
+  }, [collectionId]);
 
   useEffect(() => { loadTimelockStatus(); }, [loadTimelockStatus]);
 
@@ -90,7 +91,7 @@ export default function CollectionControlsTab({ collectionId, onChain, config, e
     fetch("/api/nft-sell/collection/treasury", {
       method: "PUT", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wallet: treasury }),
+      body: JSON.stringify({ wallet: treasury, collectionId }),
     }).then(async res => {
       const d = await res.json();
       if (!res.ok) { setOpError(d.error ?? "Schedule failed."); return; }
@@ -106,7 +107,7 @@ export default function CollectionControlsTab({ collectionId, onChain, config, e
     fetch("/api/nft-sell/collection/treasury/execute", {
       method: "POST", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operationId: timelock.operationId }),
+      body: JSON.stringify({ operationId: timelock.operationId, collectionId }),
     }).then(async res => {
       const d = await res.json();
       if (!res.ok) { setOpError(d.error ?? "Execute failed."); return; }
