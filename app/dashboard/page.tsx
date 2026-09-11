@@ -79,6 +79,7 @@ export default function DashboardPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [overviewError, setOverviewError] = useState(false);
+  const [statsCollectionId, setStatsCollectionId] = useState("");
 
   const goToWaves = async (collectionId: string) => {
     try {
@@ -120,22 +121,48 @@ export default function DashboardPage() {
 
   const fmtEth = (n: number) => `${n.toLocaleString(undefined, { maximumFractionDigits: 4 })} ETH`;
 
+  const selectedCollection = stats?.collections.find(c => c.id === statsCollectionId) ?? null;
+
   return (
     <div className="ba-page space-y-6">
-      <div>
-        <h1 className="text-xl font-bold" style={{ color: "#24315f" }}>Dashboard</h1>
-        <p className="text-sm mt-0.5" style={{ color: "#9bafc5" }}>Bearth Admin — NFT Studio</p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold" style={{ color: "#24315f" }}>Dashboard</h1>
+          <p className="text-sm mt-0.5" style={{ color: "#9bafc5" }}>Bearth Admin — NFT Studio</p>
+        </div>
+        {stats && stats.collections.length > 0 && (
+          <select
+            value={statsCollectionId}
+            onChange={e => setStatsCollectionId(e.target.value)}
+            className="py-1.5 px-3 rounded-lg text-sm font-semibold bg-white outline-none"
+            style={{ border: "1px solid #e5e7eb", color: "#24315f" }}>
+            <option value="">All Collections</option>
+            {stats.collections.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {stats && stats.totals.collections > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <StatTile label="Collections"   value={String(stats.totals.collections)} accent="#24315f" />
-          <StatTile label="Total Supply"  value={stats.totals.supply.toLocaleString()} accent="#7c3aed" />
-          <StatTile label="Generated"     value={stats.totals.minted.toLocaleString()} accent="#41afeb" />
-          <StatTile label="Sold"          value={stats.totals.sold.toLocaleString()} accent="#16a34a" />
-          <StatTile label="ETH Raised"    value={fmtEth(stats.totals.ethRaised)} accent="#ea580c" />
-          <StatTile label="Active Waves"  value={String(stats.totals.activeWaves)} accent="#dc2626" />
-        </div>
+        selectedCollection ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <StatTile label="Total Supply"  value={selectedCollection.supply.toLocaleString()} accent="#7c3aed" />
+            <StatTile label="Generated"     value={selectedCollection.mintedCount.toLocaleString()} accent="#41afeb" />
+            <StatTile label="Sold"          value={selectedCollection.totalSold.toLocaleString()} accent="#16a34a" />
+            <StatTile label="ETH Raised"    value={fmtEth(selectedCollection.ethRaised)} accent="#ea580c" />
+            <StatTile label="Active Wave"   value={selectedCollection.activeWave ? `Wave ${selectedCollection.activeWave.waveNumber}` : "None"} accent="#dc2626" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <StatTile label="Collections"   value={String(stats.totals.collections)} accent="#24315f" />
+            <StatTile label="Total Supply"  value={stats.totals.supply.toLocaleString()} accent="#7c3aed" />
+            <StatTile label="Generated"     value={stats.totals.minted.toLocaleString()} accent="#41afeb" />
+            <StatTile label="Sold"          value={stats.totals.sold.toLocaleString()} accent="#16a34a" />
+            <StatTile label="ETH Raised"    value={fmtEth(stats.totals.ethRaised)} accent="#ea580c" />
+            <StatTile label="Active Waves"  value={String(stats.totals.activeWaves)} accent="#dc2626" />
+          </div>
+        )
       )}
 
       {statsError ? (
