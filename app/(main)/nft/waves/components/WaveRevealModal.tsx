@@ -33,7 +33,7 @@ export default function WaveRevealModal({
   wave: WaveSchedule;
   collectionId: string;
   onClose: () => void;
-  onSuccess: (txHash: string) => void;
+  onSuccess: (txHash: string, autoTreasuryError?: string | null) => void;
 }) {
   const [uri, setUri] = useState(wave.wave_reveal_uri ?? "");
   const uriLocked = Boolean(wave.wave_reveal_uri);
@@ -63,7 +63,7 @@ export default function WaveRevealModal({
       console.log("txHash:", json.txHash);
       console.groupEnd();
 
-      onSuccess(json.txHash);
+      onSuccess(json.txHash, json.autoTreasuryError ?? null);
     } catch (e: unknown) {
       console.log("error:", e);
       console.groupEnd();

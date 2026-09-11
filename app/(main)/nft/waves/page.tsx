@@ -94,7 +94,7 @@ export default function WavesPage() {
   const [revealLoading, setRevealLoading] = useState(false);
   const [revealErr, setRevealErr] = useState<string | null>(null);
   const [revealWave, setRevealWave] = useState<WaveSchedule | null>(null);
-  const [revealSuccessData, setRevealSuccessData] = useState<{ txHash: string; waveNum: number } | null>(null);
+  const [revealSuccessData, setRevealSuccessData] = useState<{ txHash: string; waveNum: number; autoTreasuryError?: string | null } | null>(null);
   const [scheduleEditWave, setScheduleEditWave] = useState<WaveSchedule | null>(null);
   const [scheduleEditDate, setScheduleEditDate] = useState("");
   const [scheduleEditSaving, setScheduleEditSaving] = useState(false);
@@ -372,12 +372,12 @@ export default function WavesPage() {
     }));
   };
 
-  function handleRevealSuccess(txHash: string, waveNum: number) {
+  function handleRevealSuccess(txHash: string, waveNum: number, autoTreasuryError?: string | null) {
     console.group("[WavesPage] handleRevealSuccess");
-    console.log("txHash:", txHash, "waveNum:", waveNum);
+    console.log("txHash:", txHash, "waveNum:", waveNum, "autoTreasuryError:", autoTreasuryError);
     console.groupEnd();
     setRevealWave(null);
-    setRevealSuccessData({ txHash, waveNum });
+    setRevealSuccessData({ txHash, waveNum, autoTreasuryError });
     loadRevealData();
     loadWaves();
   }
@@ -622,7 +622,11 @@ export default function WavesPage() {
       {revealSuccessData && (
         <TxSuccessModal
           title={`Wave ${revealSuccessData.waveNum} Revealed!`}
-          message="The reveal transaction was submitted on-chain. Buyers can now see their NFT artwork."
+          message={
+            revealSuccessData.autoTreasuryError
+              ? `The reveal transaction was submitted on-chain. Buyers can now see their NFT artwork. WARNING: the automatic treasury sweep of unsold tokens FAILED (${revealSuccessData.autoTreasuryError}) -- use "Move to Treasury" manually for this wave.`
+              : "The reveal transaction was submitted on-chain. Buyers can now see their NFT artwork."
+          }
           txHash={revealSuccessData.txHash}
           onClose={() => setRevealSuccessData(null)}
         />
