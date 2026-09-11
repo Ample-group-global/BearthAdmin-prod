@@ -1,4 +1,6 @@
 import sharp from 'sharp';
+import { NextRequest } from 'next/server';
+import { getSessionToken } from '../../../../lib/api-proxy';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +23,10 @@ async function toThumbnail(input: string | Buffer, w: number, h: number): Promis
     .toBuffer();
 }
 
-export async function GET(req: Request, { params }: { params: Promise<{ rel: string[] }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ rel: string[] }> }) {
+  const token = getSessionToken(req);
+  if (!token) return new Response(null, { status: 401 });
+
   const rel = (await params).rel.join('/');
 
   const url = new URL(req.url);
@@ -29,7 +34,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ rel: str
   const h   = parseInt(url.searchParams.get('h') ?? '512') || 512;
 
   try {
-    const upstream = await fetch(`${API_BASE}/api/nft-gen/layers/image?rel=${encodeURIComponent(rel)}`);
+    const upstream = await fetch(`${API_BASE}/api/nft-gen/layers/image?rel=${encodeURIComponent(rel)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!upstream.ok) return new Response(null, { status: 404 });
     const raw = Buffer.from(await upstream.arrayBuffer());
     const buf = await toThumbnail(raw, w, h).catch(() => raw);
