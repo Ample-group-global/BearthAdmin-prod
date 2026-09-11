@@ -252,7 +252,12 @@ export default function NftPage() {
   const handleTestnetReset = useCallback(async () => {
     setResetting(true); setResetMsg(null);
     try {
-      const res = await fetch("/api/nfts/testnet-reset", { method: "POST", credentials: "include" });
+      if (!collectionFilter) throw new Error("Select a collection before resetting.");
+      const res = await fetch("/api/nfts/testnet-reset", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collectionId: collectionFilter }),
+      });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Reset failed");
       setResetMsg(d.message ?? "Reset complete.");
