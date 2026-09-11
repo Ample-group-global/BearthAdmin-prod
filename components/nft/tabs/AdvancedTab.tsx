@@ -102,7 +102,7 @@ export default function AdvancedTab({ collectionId }: { collectionId: string }) 
     if (!checkTokenId) return;
     setCheckLoading(true); setCheckError(""); setCheckMeta(null); setCheckUri(null);
     try {
-      const res = await fetch(`/api/nft-chain/metadata/${checkTokenId}`, { credentials: "include" });
+      const res = await fetch(`/api/nft-chain/metadata/${checkTokenId}?collectionId=${collectionId}`, { credentials: "include" });
       const d = await res.json();
       if (!res.ok) { setCheckError(d.error ?? `HTTP ${res.status}`); return; }
       setCheckUri(d.uri ?? null);
