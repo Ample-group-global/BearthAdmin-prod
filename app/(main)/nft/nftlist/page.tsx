@@ -55,7 +55,6 @@ interface NftRecord {
   waveScheduledStart: string | null;
   waveScheduledEnd: string | null;
   waveRevealScheduledAt: string | null;
-  waveStartingIndex: number | null;
   priceEth: number | null;
   effectivePriceEth: number | null;
   rarityTier: string | null;
@@ -80,9 +79,16 @@ interface WaveOption {
 }
 
 function artworkId(r: NftRecord): number | null {
-  if (!r.isRevealed || r.tokenId == null || r.waveQuantity == null || r.waveStartingIndex == null)
-    return null;
-  return ((r.tokenId - 1 + r.waveStartingIndex) % r.waveQuantity) + 1;
+  // Read the real assigned edition straight from metadataUri (a synced
+  // copy of the contract's own tokenURI()) instead of recomputing it from
+  // waveStartingIndex/waveQuantity -- that recomputation duplicated logic
+  // that already lives on-chain, and would silently show a wrong artwork
+  // ID if the stored starting_index ever drifted from the real on-chain
+  // value again, with no cross-check against the per-token data that's
+  // already correct. metadataUri looks like ".../<folderCid>/<id>.json".
+  if (!r.isRevealed || !r.metadataUri) return null;
+  const match = r.metadataUri.match(/\/(\d+)\.json$/);
+  return match ? parseInt(match[1], 10) : null;
 }
 function StatusBadge({ code, name }: { code: string; name: string }) {
   const colors: Record<string, { bg: string; color: string }> = {

@@ -45,7 +45,6 @@ export interface NftRecord {
   waveScheduledStart: string | null;
   waveScheduledEnd: string | null;
   waveRevealScheduledAt: string | null;
-  waveStartingIndex: number | null;
   priceEth: number | null;
   effectivePriceEth: number | null;
   rarityTier: string | null;
@@ -63,8 +62,12 @@ export interface WaveOption {
 }
 
 function artworkId(r: NftRecord): number | null {
-  if (!r.isRevealed || r.tokenId == null || r.waveQuantity == null || r.waveStartingIndex == null) return null;
-  return ((r.tokenId - 1 + r.waveStartingIndex) % r.waveQuantity) + 1;
+  // Read the real assigned edition straight from metadataUri (a synced
+  // copy of the contract's own tokenURI()) instead of recomputing it --
+  // see the matching fix + rationale in ../page.tsx's artworkId().
+  if (!r.isRevealed || !r.metadataUri) return null;
+  const match = r.metadataUri.match(/\/(\d+)\.json$/);
+  return match ? parseInt(match[1], 10) : null;
 }
 
 interface NftHistoryModalProps {
