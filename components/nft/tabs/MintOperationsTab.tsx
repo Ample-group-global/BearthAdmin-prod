@@ -79,10 +79,10 @@ export default function MintOperationsTab({ collectionId, onChain, config, onRef
   };
 
   const handleSaveLimits = () =>
-    doOp("limits", () => fetch("/api/nft-sell/customers/limits", {
+    doOp("limits", () => fetch("/api/nft-sell/collection/purchase-limit", {
       method: "PUT", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: limitEnabled, normalMaxPerWallet: parseInt(maxPerWallet, 10) }),
+      body: JSON.stringify({ enabled: limitEnabled, normalMaxPerWallet: parseInt(maxPerWallet, 10), collectionId }),
     }));
 
   const handleSetSBT = () =>
