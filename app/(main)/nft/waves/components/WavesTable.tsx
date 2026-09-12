@@ -3,6 +3,7 @@
 import { StatusBadge } from "@/components/nft/StatusBadge";
 import { thStyle } from "@/components/nft/styles";
 import { toLocalDateTimeInput } from "@/lib/nft-utils";
+import PendingRevealRecovery from "./PendingRevealRecovery";
 
 interface Wave {
   id: string;
@@ -138,6 +139,8 @@ interface WavesTableProps {
   highlightRef: React.RefObject<HTMLDivElement | null>;
   strategyHighlight: string | null;
   WAVES_PER_PAGE: number;
+  collectionId: string;
+  onReloadWaves: () => void;
 }
 
 export default function WavesTable({
@@ -151,6 +154,8 @@ export default function WavesTable({
   onTreasuryMove,
   onSetRevealDate,
   WAVES_PER_PAGE,
+  collectionId,
+  onReloadWaves,
 }: WavesTableProps) {
   const totalNfts = waves.reduce((s, w) => s + (w.quantity ?? 0), 0);
 
@@ -416,6 +421,11 @@ export default function WavesTable({
                                 Reveal Now
                               </button>
                               {stratBadge}
+                              <PendingRevealRecovery
+                                waveNumber={w.waveNumber}
+                                collectionId={collectionId}
+                                onRecovered={onReloadWaves}
+                              />
                             </div>
                           );
                           return (

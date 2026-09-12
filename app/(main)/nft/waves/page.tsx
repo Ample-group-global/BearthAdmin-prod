@@ -593,6 +593,8 @@ export default function WavesPage() {
             highlightRef={highlightRef}
             strategyHighlight={strategyHighlight}
             WAVES_PER_PAGE={WAVES_PER_PAGE}
+            collectionId={collectionId}
+            onReloadWaves={loadWaves}
           />
         </>
       )}
