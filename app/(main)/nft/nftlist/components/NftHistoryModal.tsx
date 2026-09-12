@@ -76,7 +76,6 @@ interface NftHistoryModalProps {
   maximized: boolean;
   onMaximize: () => void;
   blindBoxImageUrl: string | null;
-  traitStats: { total: number; stats: Record<string, Record<string, number>> } | null;
   waves: WaveOption[];
   sbtBusy: boolean;
   sbtMsg: string | null;
@@ -94,7 +93,6 @@ export default function NftHistoryModal({
   maximized,
   onMaximize,
   blindBoxImageUrl,
-  traitStats,
   waves,
   sbtBusy,
   sbtMsg,
@@ -508,49 +506,14 @@ export default function NftHistoryModal({
                       {Object.keys(viewRecord.traits).length} traits
                     </span>
                   </div>
-                  {!traitStats && (
-                    <span className="text-[10px] font-semibold animate-pulse" style={{ color: "#a78bfa" }}>Loading rarity…</span>
-                  )}
                 </div>
                 <div className="p-4 grid grid-cols-2 gap-3">
-                  {Object.entries(viewRecord.traits).map(([traitType, traitValue]) => {
-                    const count = traitStats?.stats?.[traitType]?.[traitValue] ?? null;
-                    const total = traitStats?.total ?? null;
-                    const pct = count != null && total ? (count / total) * 100 : null;
-                    const isRare = pct != null && pct < 10;
-                    return (
-                      <div key={traitType} className="rounded-xl p-3"
-                        style={{
-                          background: isRare ? "linear-gradient(135deg,#fdf4ff,#f5f3ff)" : "#faf5ff",
-                          border: isRare ? "1px solid #d8b4fe" : "1px solid #e9d5ff",
-                        }}>
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#a78bfa" }}>{traitType}</p>
-                          {isRare && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#7c3aed", color: "#fff" }}>✦ Rare</span>
-                          )}
-                        </div>
-                        <p className="text-sm font-bold leading-tight mb-2" style={{ color: "#3b0764" }}>{traitValue}</p>
-                        {pct != null ? (
-                          <>
-                            <div className="h-1.5 rounded-full overflow-hidden mb-1" style={{ background: "#ede9fe" }}>
-                              <div className="h-full rounded-full transition-all duration-700"
-                                style={{
-                                  width: `${Math.min(pct, 100)}%`,
-                                  background: pct < 5 ? "#7c3aed" : pct < 15 ? "#8b5cf6" : pct < 30 ? "#a78bfa" : "#c4b5fd",
-                                }} />
-                            </div>
-                            <p className="text-[10px] font-semibold" style={{ color: "#7c3aed" }}>
-                              {pct.toFixed(1)}% have this trait
-                              <span className="font-normal ml-1" style={{ color: "#a78bfa" }}>({count!.toLocaleString()} of {total!.toLocaleString()})</span>
-                            </p>
-                          </>
-                        ) : (
-                          <div className="h-1.5 rounded-full animate-pulse" style={{ background: "#ede9fe", width: "60%" }} />
-                        )}
-                      </div>
-                    );
-                  })}
+                  {Object.entries(viewRecord.traits).map(([traitType, traitValue]) => (
+                    <div key={traitType} className="rounded-xl p-3" style={{ background: "#faf5ff", border: "1px solid #e9d5ff" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "#a78bfa" }}>{traitType}</p>
+                      <p className="text-sm font-bold leading-tight" style={{ color: "#3b0764" }}>{traitValue}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

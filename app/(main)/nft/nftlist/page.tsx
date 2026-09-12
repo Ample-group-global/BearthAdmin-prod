@@ -168,7 +168,6 @@ export default function NftPage() {
   const [modalMaximized, setModalMaximized] = useState(false);
   const [waves, setWaves] = useState<WaveOption[]>([]);
   const [blindBoxImageUrl, setBlindBoxImageUrl] = useState<string | null>(null);
-  const [traitStats, setTraitStats] = useState<{ total: number; stats: Record<string, Record<string, number>> } | null>(null);
 
   const [mintedFrom, setMintedFrom] = useState("");
   const [mintedTo, setMintedTo] = useState("");
@@ -387,15 +386,8 @@ export default function NftPage() {
   const openModal = useCallback((r: NftRecord) => {
     console.group("[NftPage] openModal");
     console.log("id:", r.id, "serial:", r.serialNumber, "revealed:", r.isRevealed);
-    setViewRecord(r); setModalMaximized(false); setTraitStats(null);
+    setViewRecord(r); setModalMaximized(false);
     setModalMintMoveRecip(""); setModalMintMoveMsg(null);
-    if (r.isRevealed && r.traits && Object.keys(r.traits).length > 0) {
-      fetch("/api/nfts/trait-stats", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ traits: r.traits }),
-      }).then(res => res.ok ? res.json() : null).then(data => { if (data) setTraitStats(data); }).catch(() => null);
-    }
     console.groupEnd();
   }, []);
 
@@ -1052,7 +1044,6 @@ export default function NftPage() {
           maximized={modalMaximized}
           onMaximize={() => setModalMaximized(v => !v)}
           blindBoxImageUrl={blindBoxImageUrl}
-          traitStats={traitStats}
           waves={waves}
           sbtBusy={sbtBusy}
           sbtMsg={sbtMsg}
