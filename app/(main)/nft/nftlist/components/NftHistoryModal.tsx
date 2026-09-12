@@ -427,7 +427,16 @@ export default function NftHistoryModal({
               </div>
               {[
                 { label: "Generated", date: viewRecord.createdAt, color: "#6366f1", desc: "NFT created in DB from generator", txHash: null },
-                { label: "Reserved", date: (["treasury_wallet", "transferred", "treasury_pending"].includes(viewRecord.deliveryStatusCode ?? "") || (viewRecord.tokenId == null && viewRecord.deliveryStatusCode !== "sold")) ? (viewRecord.waveRevealScheduledAt ?? viewRecord.createdAt ?? null) : null, color: "#b45309", desc: (viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred") ? "Wave closed — NFT was unsold, reserved for treasury" : "Wave closed — NFT unsold, awaiting mint & move to treasury", txHash: null },
+                // Used to also fire on any tokenId==null pre-mint token
+                // regardless of that wave's real state, falling back to
+                // createdAt as a fake "reserved" date -- meaning any
+                // unstarted future wave's blind-box tokens showed as
+                // "Reserved" from the moment they were generated. The
+                // treasury_wallet/transferred/treasury_pending statuses are
+                // the real backend-computed signal (only set once that
+                // specific wave has actually closed), same fix already
+                // applied to the status badges above.
+                { label: "Reserved", date: ["treasury_wallet", "transferred", "treasury_pending"].includes(viewRecord.deliveryStatusCode ?? "") ? (viewRecord.waveRevealScheduledAt ?? viewRecord.createdAt ?? null) : null, color: "#b45309", desc: (viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred") ? "Wave closed — NFT was unsold, reserved for treasury" : "Wave closed — NFT unsold, awaiting mint & move to treasury", txHash: null },
                 { label: "Minted", date: viewRecord.mintedAt, color: "#7c3aed", desc: (viewRecord.deliveryStatusCode === "treasury_wallet" || viewRecord.deliveryStatusCode === "transferred") ? "Minted on-chain via treasury close" : "Minted on-chain to buyer wallet", txHash: viewRecord.mintTxHash },
                 { label: "Revealed", date: viewRecord.revealedAt, color: "#8b5cf6", desc: "Artwork revealed, blind box opened", txHash: viewRecord.waveRevealTxHash },
                 { label: "Sold", date: viewRecord.soldAt, color: "#f59e0b", desc: viewRecord.lastSalePriceEth != null ? `Sold for ${Number(viewRecord.lastSalePriceEth).toFixed(4)} ETH` : "Ownership transferred on-chain", txHash: viewRecord.lastTxHash },
