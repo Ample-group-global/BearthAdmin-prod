@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-export function useWhitelist() {
+export function useWhitelist(collectionId: string) {
   const [addresses, setAddresses] = useState<string[]>([]);
   const [stats, setStats] = useState<{
     merkleRoot: string;
@@ -20,10 +20,11 @@ export function useWhitelist() {
   const [clearMerkleRootOverrideLoading, setClearMerkleRootOverrideLoading] = useState(false);
 
   const load = useCallback(async () => {
+    if (!collectionId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/whitelist?limit=1000");
+      const res = await fetch(`/api/whitelist?limit=1000&collection_id=${collectionId}`);
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
       setAddresses(data.addresses ?? []);
@@ -39,7 +40,7 @@ export function useWhitelist() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [collectionId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -49,7 +50,7 @@ export function useWhitelist() {
       const res = await fetch("/api/whitelist/entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({ address, collectionId }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -59,7 +60,7 @@ export function useWhitelist() {
     } finally {
       setAddAddressLoading(false);
     }
-  }, [load]);
+  }, [load, collectionId]);
 
   const addAddressesBulk = useCallback(async (list: string[]) => {
     setAddAddressesLoading(true);
@@ -67,7 +68,7 @@ export function useWhitelist() {
       const res = await fetch("/api/whitelist/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addresses: list }),
+        body: JSON.stringify({ addresses: list, collectionId }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -77,12 +78,12 @@ export function useWhitelist() {
     } finally {
       setAddAddressesLoading(false);
     }
-  }, [load]);
+  }, [load, collectionId]);
 
   const removeAddress = useCallback(async (address: string) => {
     setRemoveAddressLoading(true);
     try {
-      const res = await fetch(`/api/whitelist/${encodeURIComponent(address)}`, {
+      const res = await fetch(`/api/whitelist/${encodeURIComponent(address)}?collection_id=${collectionId}`, {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -93,7 +94,7 @@ export function useWhitelist() {
     } finally {
       setRemoveAddressLoading(false);
     }
-  }, [load]);
+  }, [load, collectionId]);
 
   const testAddress = useCallback(async (address: string) => {
     setTestAddressLoading(true);
@@ -101,7 +102,7 @@ export function useWhitelist() {
       const res = await fetch("/api/whitelist/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({ address, collectionId }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -112,7 +113,7 @@ export function useWhitelist() {
     } finally {
       setTestAddressLoading(false);
     }
-  }, []);
+  }, [collectionId]);
 
   const setMerkleRoot = useCallback(async (root: string) => {
     setSetMerkleRootLoading(true);
@@ -120,7 +121,7 @@ export function useWhitelist() {
       const res = await fetch("/api/whitelist/merkle-root", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ root }),
+        body: JSON.stringify({ root, collectionId }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -130,12 +131,12 @@ export function useWhitelist() {
     } finally {
       setSetMerkleRootLoading(false);
     }
-  }, [load]);
+  }, [load, collectionId]);
 
   const clearMerkleRootOverride = useCallback(async () => {
     setClearMerkleRootOverrideLoading(true);
     try {
-      const res = await fetch("/api/whitelist/merkle-root", {
+      const res = await fetch(`/api/whitelist/merkle-root?collection_id=${collectionId}`, {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -146,13 +147,13 @@ export function useWhitelist() {
     } finally {
       setClearMerkleRootOverrideLoading(false);
     }
-  }, [load]);
+  }, [load, collectionId]);
 
   const exportWhitelist = useCallback(async (fmt: "csv" | "json" | "txt") => {
-    const res = await fetch(`/api/whitelist/export?format=${fmt}`);
+    const res = await fetch(`/api/whitelist/export?format=${fmt}&collection_id=${collectionId}`);
     if (!res.ok) throw new Error("Export failed");
     return res.blob();
-  }, []);
+  }, [collectionId]);
 
   return {
     addresses, stats, isLoading, error,

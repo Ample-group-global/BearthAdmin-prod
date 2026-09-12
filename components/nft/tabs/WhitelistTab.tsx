@@ -34,7 +34,7 @@ const inputStyle: React.CSSProperties = { border: "1px solid #e5e7eb" };
 const btnPrimary = "px-4 py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40";
 const btnPrimaryStyle: React.CSSProperties = { background: "#24315f" };
 
-export default function WhitelistTab({ collectionId: _collectionId }: { collectionId: string }) {
+export default function WhitelistTab({ collectionId }: { collectionId: string }) {
   const { toasts, showToast, removeToast } = useToast();
   const {
     addresses, stats, isLoading, error,
@@ -42,7 +42,7 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
     setMerkleRoot, clearMerkleRootOverride, exportWhitelist,
     addAddressLoading, addAddressesLoading, removeAddressLoading,
     testAddressLoading, setMerkleRootLoading, clearMerkleRootOverrideLoading,
-  } = useWhitelist();
+  } = useWhitelist(collectionId);
 
   const [wlTab, setWlTab] = useState<WlTab>("addresses");
   const [search, setSearch] = useState("");
@@ -84,6 +84,7 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
           address: addr, role_code: newRoleCode,
           first_name: newFirstName.trim(), last_name: newLastName.trim() || undefined,
           email: newEmail.trim() || undefined,
+          collectionId,
         }),
       });
       const data = await res.json() as { ok?: boolean; error?: string; isNewUser?: boolean; roleCode?: string };
@@ -121,6 +122,7 @@ export default function WhitelistTab({ collectionId: _collectionId }: { collecti
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({ collectionId }),
       });
       const data = await res.json() as { success?: boolean; txHash?: string; error?: string };
       if (!res.ok || !data.success) throw new Error(data.error ?? "Push failed");
