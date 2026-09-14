@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 export function useWhitelist(collectionId: string) {
   const [addresses, setAddresses] = useState<string[]>([]);
@@ -18,9 +18,15 @@ export function useWhitelist(collectionId: string) {
   const [testAddressLoading, setTestAddressLoading] = useState(false);
   const [clearMerkleRootOverrideLoading, setClearMerkleRootOverrideLoading] = useState(false);
 
+  // Only the very first load (per collection) should blank the address
+  // table to a skeleton -- reloads after Push/Add/Remove already have their
+  // own button-level "Pushing.../Adding..." feedback, so flashing the whole
+  // table away and back on every action just reads as broken/jarring.
+  const hasLoadedRef = useRef<string | null>(null);
+
   const load = useCallback(async () => {
     if (!collectionId) return;
-    setIsLoading(true);
+    if (hasLoadedRef.current !== collectionId) setIsLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/whitelist?limit=1000&collection_id=${collectionId}`);
@@ -35,6 +41,7 @@ export function useWhitelist(collectionId: string) {
           lastUpdated: data.metadata.last_updated ?? "",
         });
       }
+      hasLoadedRef.current = collectionId;
     } catch (e: unknown) {
       setError((e as Error)?.message || "Failed to load whitelist");
     } finally {

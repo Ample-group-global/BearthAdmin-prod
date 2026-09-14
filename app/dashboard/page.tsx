@@ -311,15 +311,23 @@ export default function DashboardPage() {
           <p className="text-xs mt-0.5" style={{ color: "#9bafc5" }}>Quick wave &amp; selling summary for a collection</p>
         </div>
         {collections.length > 0 && (
-          <select
-            value={collectionId}
-            onChange={e => setCollectionId(e.target.value)}
-            className="py-1.5 px-3 rounded-lg text-sm font-semibold bg-white outline-none"
-            style={{ border: "1px solid #e5e7eb", color: "#24315f" }}>
-            {collections.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            {loading && data && (
+              <svg className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: "#9bafc5" }} fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
+            <select
+              value={collectionId}
+              onChange={e => setCollectionId(e.target.value)}
+              className="py-1.5 px-3 rounded-lg text-sm font-semibold bg-white outline-none"
+              style={{ border: "1px solid #e5e7eb", color: "#24315f" }}>
+              {collections.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
         )}
       </div>
 
@@ -330,7 +338,7 @@ export default function DashboardPage() {
             Create one in <Link href="/dashboard/generator" style={{ color: "#41afeb" }}>NFT Studio</Link> to see selling and wave activity here.
           </p>
         </div>
-      ) : loading ? (
+      ) : loading && !data ? (
         <div className="p-6 flex items-center justify-center h-40">
           <div className="flex items-center gap-3" style={{ color: "#9bafc5" }}>
             <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
