@@ -37,7 +37,7 @@ const btnPrimaryStyle: React.CSSProperties = { background: "#24315f" };
 export default function WhitelistTab({ collectionId }: { collectionId: string }) {
   const { toasts, showToast, removeToast } = useToast();
   const {
-    addresses, stats, isLoading, error,
+    addresses, customers, stats, isLoading, error,
     addAddress, addAddressesBulk, removeAddress, testAddress,
     setMerkleRoot, clearMerkleRootOverride, exportWhitelist,
     addAddressLoading, addAddressesLoading, removeAddressLoading,
@@ -242,6 +242,7 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
                       <thead>
                         <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
                           <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>#</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Customer</th>
                           <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Address</th>
                           <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Action</th>
                         </tr>
@@ -253,6 +254,16 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
                             onMouseEnter={e => (e.currentTarget.style.background = "#fafbff")}
                             onMouseLeave={e => (e.currentTarget.style.background = "")}>
                             <td className="px-4 py-3 font-mono text-xs" style={{ color: "#9bafc5" }}>{(page - 1) * PER_PAGE + i + 1}</td>
+                            <td className="px-4 py-3 text-xs">
+                              {customers[addr.toLowerCase()] ? (
+                                <div>
+                                  <div className="font-semibold" style={{ color: "#24315f" }}>{customers[addr.toLowerCase()].name || "(no name)"}</div>
+                                  <div className="font-mono" style={{ color: "#9bafc5" }}>{customers[addr.toLowerCase()].userCode || "—"}</div>
+                                </div>
+                              ) : (
+                                <span style={{ color: "#9bafc5" }}>Not registered</span>
+                              )}
+                            </td>
                             <td className="px-4 py-3 font-mono text-xs break-all" style={{ color: "#24315f" }}>{addr}</td>
                             <td className="px-4 py-3 text-right">
                               {confirmRemove === addr ? (

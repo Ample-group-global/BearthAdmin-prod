@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 
 export function useWhitelist(collectionId: string) {
   const [addresses, setAddresses] = useState<string[]>([]);
+  const [customers, setCustomers] = useState<Record<string, { userCode: string | null; name: string | null }>>({});
   const [stats, setStats] = useState<{
     merkleRoot: string;
     manualOverride: boolean;
@@ -28,6 +29,7 @@ export function useWhitelist(collectionId: string) {
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
       setAddresses(data.addresses ?? []);
+      setCustomers(data.customers ?? {});
       if (data.metadata) {
         setStats({
           merkleRoot: data.metadata.merkle_root ?? "0x0",
@@ -156,7 +158,7 @@ export function useWhitelist(collectionId: string) {
   }, [collectionId]);
 
   return {
-    addresses, stats, isLoading, error,
+    addresses, customers, stats, isLoading, error,
     addAddress, addAddressesBulk, removeAddress, testAddress,
     setMerkleRoot, clearMerkleRootOverride, exportWhitelist,
     addAddressLoading, addAddressesLoading, removeAddressLoading,
