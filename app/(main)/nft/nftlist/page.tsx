@@ -154,6 +154,7 @@ export default function NftPage() {
   const [mintedCount, setMintedCount] = useState(0);
   const [soldCount, setSoldCount] = useState(0);
   const [deliveredCount, setDeliveredCount] = useState(0);
+  const [walletsByWave, setWalletsByWave] = useState<{ waveNumber: number; waveName: string; distinctWallets: number }[]>([]);
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -244,6 +245,7 @@ export default function NftPage() {
         setMintedCount(data.mintedCount ?? 0);
         setSoldCount(data.soldCount ?? 0);
         setDeliveredCount(data.deliveredCount ?? 0);
+        setWalletsByWave(data.walletsByWave ?? []);
         setLoading(false);
         console.log("records loaded:", data.nftRecords?.length ?? 0);
         console.groupEnd();
@@ -1018,6 +1020,23 @@ export default function NftPage() {
               </button>
             )}
           </div>
+
+          {collectionFilter && walletsByWave.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 rounded-xl"
+              style={{ background: "#f8fafc", border: "1px solid #e5e7eb" }}>
+              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: "#64748b" }}>
+                Distinct wallets minted per wave
+              </span>
+              {walletsByWave.map(w => (
+                <span key={w.waveNumber}
+                  className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
+                  style={{ background: w.distinctWallets > 0 ? "rgba(65,175,235,0.1)" : "rgba(156,163,175,0.1)", color: w.distinctWallets > 0 ? "#41afeb" : "#9ca3af" }}
+                  title={w.waveName}>
+                  W{w.waveNumber} · {w.distinctWallets}
+                </span>
+              ))}
+            </div>
+          )}
 
           {showRevealPanel && (
             <WaveRevealPanel
