@@ -220,7 +220,10 @@ export default function NftPage() {
     } else if (revealed === "treasury_wallet") {
       params.set("delivery_status", "treasury_wallet");
     } else if (revealed === "revealed") {
-      params.set("delivery_status", "revealed");
+      // Artwork-unlocked, independent of holder -- use the query's own
+      // is_revealed boolean rather than the narrower 'revealed' delivery
+      // status code (which only means customer-held revealed).
+      params.set("revealed", "true");
     } else if (revealed === "customer_held") {
       params.set("delivery_status", "customer_held");
     } else if (status) {
