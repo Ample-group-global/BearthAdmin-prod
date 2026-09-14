@@ -155,6 +155,8 @@ export default function NftPage() {
   const [soldCount, setSoldCount] = useState(0);
   const [deliveredCount, setDeliveredCount] = useState(0);
   const [walletsByWave, setWalletsByWave] = useState<{ waveNumber: number; waveName: string; distinctWallets: number }[]>([]);
+  const [distinctCustomerWalletCount, setDistinctCustomerWalletCount] = useState(0);
+  const [rarityTierBreakdown, setRarityTierBreakdown] = useState<{ tier: string; customerHeld: number; treasuryHeld: number }[]>([]);
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -195,6 +197,7 @@ export default function NftPage() {
   const isTestnet = process.env.NEXT_PUBLIC_NETWORK !== "mainnet";
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadRequestIdRef = useRef(0);
 
   const loadRecords = useCallback((
     q: string, off: number, status: string, stage: string, revealed: string, wave: string,
@@ -230,9 +233,18 @@ export default function NftPage() {
     }
     if (sk) params.set("sort_by", sk);
     if (sk && sd) params.set("sort_dir", sd);
+    const requestId = ++loadRequestIdRef.current;
     fetch(`/api/nfts?${params}`, { credentials: "include" })
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then(data => {
+        // Filter changes fire in quick succession (dropdown, date pickers);
+        // nothing here guarantees responses land in the order they were
+        // requested in. Drop any response that isn't from the most recent
+        // request -- otherwise a slower earlier request can overwrite a
+        // faster later one with stale results (confirmed live 2026-09-15:
+        // rapid rarity-tier changes showed a stale "29,997 records" total
+        // that belonged to an earlier, already-superseded request).
+        if (requestId !== loadRequestIdRef.current) { console.groupEnd(); return; }
         setRecords(data.nftRecords ?? []);
         setTotal(data.total ?? 0);
         setTotalAll(data.totalAll ?? 0);
@@ -246,11 +258,16 @@ export default function NftPage() {
         setSoldCount(data.soldCount ?? 0);
         setDeliveredCount(data.deliveredCount ?? 0);
         setWalletsByWave(data.walletsByWave ?? []);
+        setDistinctCustomerWalletCount(data.distinctCustomerWalletCount ?? 0);
+        setRarityTierBreakdown(data.rarityTierBreakdown ?? []);
         setLoading(false);
         console.log("records loaded:", data.nftRecords?.length ?? 0);
         console.groupEnd();
       })
-      .catch(() => { setError("Unable to load NFT records. Please try again."); setLoading(false); console.groupEnd(); });
+      .catch(() => {
+        if (requestId !== loadRequestIdRef.current) { console.groupEnd(); return; }
+        setError("Unable to load NFT records. Please try again."); setLoading(false); console.groupEnd();
+      });
   }, []);
 
   const handleTestnetReset = useCallback(async () => {
@@ -346,6 +363,17 @@ export default function NftPage() {
 
   const activeWave = waveFilter ? waves.find(w => String(w.waveNumber) === waveFilter) : null;
   const showRevealPanel = !!activeWave?.onChain?.closed && !activeWave?.onChain?.revealed && (activeWave?.onChain?.soldCount ?? 0) > 0;
+
+  const tableEmptyText = (() => {
+    if (!rarityTierFilter) return "No NFT records found";
+    const tierInfo = rarityTierBreakdown.find(t => t.tier === rarityTierFilter);
+    const treasuryHeld = tierInfo?.treasuryHeld ?? 0;
+    if (treasuryHeld > 0) {
+      const tierLabel = rarityTierFilter.charAt(0).toUpperCase() + rarityTierFilter.slice(1);
+      return `No ${tierLabel} tokens match the other filters -- ${treasuryHeld} ${tierLabel} token${treasuryHeld === 1 ? "" : "s"} exist${treasuryHeld === 1 ? "s" : ""} but ${treasuryHeld === 1 ? "is" : "are"} currently in Treasury.`;
+    }
+    return "No NFT records found";
+  })();
 
   const handleRevealWave = async () => {
     if (!revealUri.startsWith("ipfs://")) { setRevealMsg("URI must start with ipfs://"); return; }
@@ -873,6 +901,12 @@ export default function NftPage() {
                 icon: <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" /></svg>,
                 filter: () => { setRevealFilter("treasury_wallet"); setStatusFilter(""); setWaveFilter(""); applyFilter("", stageFilter, "treasury_wallet", ""); },
               },
+              {
+                label: "Minted by Customers", value: distinctCustomerWalletCount, color: "#16a34a", bg: "#f0fdf4", pct: -1,
+                sub: "Distinct wallets that minted",
+                icon: <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
+                filter: () => { setRevealFilter(""); setStatusFilter(""); setWaveFilter(""); setRarityTierFilter(""); applyFilter("", stageFilter, "", ""); },
+              },
             ].map(s => (
               <button key={s.label} onClick={s.filter}
                 className="text-left bg-white rounded-2xl transition-all duration-150 group"
@@ -890,13 +924,17 @@ export default function NftPage() {
                   {s.value.toLocaleString()}
                 </p>
                 <p className="text-[10px] mb-3" style={{ color: "#94a3b8" }}>{s.sub}</p>
-                <div className="h-1 rounded-full overflow-hidden" style={{ background: "#f1f5f9" }}>
-                  <div className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${s.pct}%`, background: s.color, opacity: 0.7 }} />
-                </div>
-                <p className="text-[10px] mt-1 font-semibold" style={{ color: s.color + "99" }}>
-                  {s.pct}% of collection
-                </p>
+                {s.pct >= 0 && (
+                  <>
+                    <div className="h-1 rounded-full overflow-hidden" style={{ background: "#f1f5f9" }}>
+                      <div className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${s.pct}%`, background: s.color, opacity: 0.7 }} />
+                    </div>
+                    <p className="text-[10px] mt-1 font-semibold" style={{ color: s.color + "99" }}>
+                      {s.pct}% of collection
+                    </p>
+                  </>
+                )}
               </button>
             ))}
           </div>
@@ -951,13 +989,7 @@ export default function NftPage() {
               onChange={e => {
                 const newReveal = e.target.value;
                 setRevealFilter(newReveal);
-                const noRarityStages = ["pre_mint", "sold", "unsold"];
-                if (rarityTierFilter && noRarityStages.includes(newReveal)) {
-                  setRarityTierFilter("");
-                  applyFilter(statusFilter, stageFilter, newReveal, waveFilter, mintedFrom, mintedTo, mintTypeFilter, "");
-                } else {
-                  applyFilter(statusFilter, stageFilter, newReveal, waveFilter, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
-                }
+                applyFilter(statusFilter, stageFilter, newReveal, waveFilter, mintedFrom, mintedTo, mintTypeFilter, rarityTierFilter, collectionFilter);
               }}
               className="py-2 px-3 rounded-xl text-sm bg-white outline-none"
               style={{ border: "1px solid #e5e7eb", color: revealFilter ? "#111827" : "#9bafc5" }}>
@@ -981,13 +1013,15 @@ export default function NftPage() {
 
             <select value={rarityTierFilter}
               onChange={e => {
+                // Independent of Status -- the backend requires is_revealed
+                // for any rarity_tier match regardless of what else is sent,
+                // so a tier alone safely shows every revealed token of that
+                // tier (customer-held + treasury-held together) without ever
+                // leaking pre-mint blind-box rarity. Picking a Status too
+                // narrows further, same as any other pair of filters.
                 const tier = e.target.value;
                 setRarityTierFilter(tier);
-                const noRarityStages = ["pre_mint", "sold", "unsold"];
-                const forceReveal = tier && (!revealFilter || noRarityStages.includes(revealFilter));
-                const newReveal = forceReveal ? "revealed" : revealFilter;
-                if (forceReveal) setRevealFilter("revealed");
-                applyFilter(statusFilter, stageFilter, newReveal, waveFilter, mintedFrom, mintedTo, mintTypeFilter, tier);
+                applyFilter(statusFilter, stageFilter, revealFilter, waveFilter, mintedFrom, mintedTo, mintTypeFilter, tier);
               }}
               className="py-2 px-3 rounded-xl text-sm bg-white outline-none"
               style={{ border: "1px solid #e5e7eb", color: rarityTierFilter ? "#111827" : "#9bafc5" }}>
@@ -1058,7 +1092,7 @@ export default function NftPage() {
             onPageChange={setOffset}
             loading={loading}
             error={error}
-            emptyText="No NFT records found"
+            emptyText={tableEmptyText}
             keyExtractor={r => r.id}
             sortKey={sortKey}
             sortDir={sortDir}
