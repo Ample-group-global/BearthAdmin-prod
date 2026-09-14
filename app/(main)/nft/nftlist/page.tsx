@@ -221,6 +221,8 @@ export default function NftPage() {
       params.set("delivery_status", "treasury_wallet");
     } else if (revealed === "revealed") {
       params.set("delivery_status", "revealed");
+    } else if (revealed === "customer_held") {
+      params.set("delivery_status", "customer_held");
     } else if (status) {
       params.set("delivery_status", status);
     }
@@ -903,9 +905,9 @@ export default function NftPage() {
               },
               {
                 label: "Minted by Customers", value: distinctCustomerWalletCount, color: "#16a34a", bg: "#f0fdf4", pct: -1,
-                sub: "Distinct wallets that minted",
+                sub: "Distinct wallets that minted -- click to see their NFTs",
                 icon: <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
-                filter: () => { setRevealFilter(""); setStatusFilter(""); setWaveFilter(""); setRarityTierFilter(""); applyFilter("", stageFilter, "", ""); },
+                filter: () => { setRevealFilter("customer_held"); setStatusFilter(""); setWaveFilter(""); applyFilter("", stageFilter, "customer_held", ""); },
               },
             ].map(s => (
               <button key={s.label} onClick={s.filter}
