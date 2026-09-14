@@ -25,6 +25,34 @@ async function goToCollectionPage(
   router.push(qs ? `${path}?${qs}` : path);
 }
 
+// Wave-scoped links into NFT List used to pass ?wave=N as a visible query
+// param, and Sold/Treasury Qty both passed the SAME {wave} with no status --
+// so clicking either landed on the identical unfiltered-by-status view,
+// which is why they looked like they "weren't filtering". Fixed two ways:
+// the status distinction is now real (customer_held vs treasury_wallet),
+// and both wave + status travel through a short-lived hidden cookie instead
+// of the URL, matching the collection hand-off's own pattern.
+async function goToNftList(
+  router: ReturnType<typeof useRouter>,
+  collectionId: string,
+  collectionName: string,
+  hint: { wave?: number; status?: string } = {},
+) {
+  await Promise.all([
+    fetch("/api/session/collection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collectionId, name: collectionName }),
+    }).catch(() => {}),
+    fetch("/api/session/nftlist-filter", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wave: hint.wave ?? null, status: hint.status ?? null }),
+    }).catch(() => {}),
+  ]);
+  router.push("/nft/nftlist");
+}
+
 interface WaveRow {
   waveNumber: number;
   name: string;
@@ -168,60 +196,82 @@ function SectionDivider({ label }: { label: string }) {
   );
 }
 
+const SOLD_COLOR = "#7c3aed";
+const TREASURY_COLOR = "#0e7490";
+
 function WaveBarChart({ waves, collectionId, collectionName }: { waves: WaveRow[]; collectionId: string; collectionName: string }) {
   const router = useRouter();
   const [hovered, setHovered] = useState<number | null>(null);
-  const max = Math.max(1, ...waves.map(w => w.soldCount));
+  const max = Math.max(1, ...waves.map(w => w.soldCount + w.treasuryQty));
   const barW = 44, gap = 20, chartH = 160, leftPad = 8;
   const width = waves.length * (barW + gap) + leftPad;
   const active = hovered !== null ? waves.find(w => w.waveNumber === hovered) ?? null : null;
-  const pctSold = (w: WaveRow) => w.quantity > 0 ? Math.round((w.soldCount / w.quantity) * 100) : 0;
+  const pct = (part: number, whole: number) => whole > 0 ? Math.round((part / whole) * 100) : 0;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2 h-9">
         {active ? (
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-3 text-xs flex-wrap">
             <span className="font-bold" style={{ color: "#24315f" }}>W{active.waveNumber} — {active.name}</span>
-            <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(124,58,237,0.1)", color: "#7c3aed" }}>
-              {active.soldCount.toLocaleString()} / {active.quantity.toLocaleString()} sold ({pctSold(active)}%)
+            <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: SOLD_COLOR + "1a", color: SOLD_COLOR }}>
+              {active.soldCount.toLocaleString()} customer ({pct(active.soldCount, active.quantity)}%)
             </span>
-            <span style={{ color: "#9bafc5" }}>{active.priceEth ? `${active.priceEth} ETH each` : "Free mint"}</span>
+            <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: TREASURY_COLOR + "1a", color: TREASURY_COLOR }}>
+              {active.treasuryQty.toLocaleString()} treasury ({pct(active.treasuryQty, active.quantity)}%)
+            </span>
+            <span style={{ color: "#9bafc5" }}>of {active.quantity.toLocaleString()} total</span>
+            <span style={{ color: "#9bafc5" }}>· {active.priceEth ? `${active.priceEth} ETH each` : "Free mint"}</span>
             <span style={{ color: "#9bafc5" }}>· Revenue {active.revenueEth.toFixed(4)} ETH</span>
-            <span className="font-semibold" style={{ color: "#41afeb" }}>Click to view these NFTs →</span>
           </div>
         ) : (
-          <span className="text-xs" style={{ color: "#9bafc5" }}>Hover a bar for details · click to view that wave&apos;s NFTs</span>
+          <span className="text-xs flex items-center gap-3" style={{ color: "#9bafc5" }}>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: SOLD_COLOR }} />Customer</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: TREASURY_COLOR }} />Treasury</span>
+            <span>· Hover a bar for details · click a segment to view those NFTs</span>
+          </span>
         )}
       </div>
       <div className="overflow-x-auto">
-        <svg width={width} height={chartH + 40} role="img" aria-label="NFTs sold per wave">
+        <svg width={width} height={chartH + 40} role="img" aria-label="NFTs sold per wave, customer vs treasury">
           {waves.map((w, i) => {
-            const h = Math.round((w.soldCount / max) * chartH);
+            const soldH = Math.round((w.soldCount / max) * chartH);
+            const treasuryH = Math.round((w.treasuryQty / max) * chartH);
+            const totalH = soldH + treasuryH;
             const x = leftPad + i * (barW + gap);
             const isHovered = hovered === w.waveNumber;
+            const hasAny = w.soldCount + w.treasuryQty > 0;
             return (
               <g key={w.waveNumber}
-                className="cursor-pointer"
                 onMouseEnter={() => setHovered(w.waveNumber)}
                 onMouseLeave={() => setHovered(null)}
-                onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
               >
                 <rect x={x - 4} y={0} width={barW + 8} height={chartH + 24} fill="transparent" />
-                <rect x={x} y={chartH - h} width={barW} height={Math.max(h, w.soldCount > 0 ? 2 : 0)}
-                  rx={4} fill="#7c3aed" opacity={w.soldCount > 0 ? (isHovered ? 1 : 0.85) : (isHovered ? 0.35 : 0.15)}
-                  style={{ transition: "opacity 120ms ease" }} />
-                {isHovered && (
-                  <rect x={x} y={chartH - h} width={barW} height={Math.max(h, w.soldCount > 0 ? 2 : 0)}
-                    rx={4} fill="none" stroke="#7c3aed" strokeWidth={2} />
+                {w.soldCount > 0 && (
+                  <rect className="cursor-pointer"
+                    onClick={() => goToNftList(router, collectionId, collectionName, { wave: w.waveNumber, status: "customer_held" })}
+                    x={x} y={chartH - soldH} width={barW} height={Math.max(soldH, 2)}
+                    rx={4} fill={SOLD_COLOR} opacity={isHovered ? 1 : 0.85}
+                    style={{ transition: "opacity 120ms ease" }} />
                 )}
-                {!h && <rect x={x} y={chartH - 2} width={barW} height={2} rx={1} fill="#e5e7eb" />}
-                <text x={x + barW / 2} y={chartH - h - 6} textAnchor="middle" fontSize="11" fontWeight="700"
-                  fill={isHovered ? "#7c3aed" : "#24315f"}>
-                  {w.soldCount}
+                {w.treasuryQty > 0 && (
+                  <rect className="cursor-pointer"
+                    onClick={() => goToNftList(router, collectionId, collectionName, { wave: w.waveNumber, status: "treasury_wallet" })}
+                    x={x} y={chartH - totalH} width={barW} height={Math.max(treasuryH, 2)}
+                    rx={4} fill={TREASURY_COLOR} opacity={isHovered ? 1 : 0.85}
+                    style={{ transition: "opacity 120ms ease" }} />
+                )}
+                {isHovered && hasAny && (
+                  <rect x={x} y={chartH - totalH} width={barW} height={Math.max(totalH, 2)}
+                    rx={4} fill="none" stroke="#24315f" strokeWidth={1.5} />
+                )}
+                {!hasAny && <rect x={x} y={chartH - 2} width={barW} height={2} rx={1} fill="#e5e7eb" />}
+                <text x={x + barW / 2} y={chartH - totalH - 6} textAnchor="middle" fontSize="11" fontWeight="700"
+                  fill={isHovered ? "#24315f" : "#64748b"}>
+                  {w.soldCount + w.treasuryQty}
                 </text>
                 <text x={x + barW / 2} y={chartH + 18} textAnchor="middle" fontSize="10" fontWeight="700"
-                  fill={isHovered ? "#7c3aed" : "#9bafc5"}>
+                  fill={isHovered ? "#24315f" : "#9bafc5"}>
                   W{w.waveNumber}
                 </text>
               </g>
@@ -446,14 +496,14 @@ export default function DashboardPage() {
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151" }}>{w.priceEth || "Free"}</td>
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                            <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
+                            <button onClick={() => goToNftList(router, collectionId, collectionName, { wave: w.waveNumber })}
                               style={{ color: "#41afeb" }}>
                               {w.quantity.toLocaleString()}
                             </button>
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
                             {w.soldCount > 0 ? (
-                              <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
+                              <button onClick={() => goToNftList(router, collectionId, collectionName, { wave: w.waveNumber, status: "customer_held" })}
                                 className="font-semibold" style={{ color: "#41afeb" }}>
                                 {w.soldCount.toLocaleString()}
                               </button>
@@ -463,7 +513,7 @@ export default function DashboardPage() {
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
                             {w.treasuryQty > 0 ? (
-                              <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
+                              <button onClick={() => goToNftList(router, collectionId, collectionName, { wave: w.waveNumber, status: "treasury_wallet" })}
                                 style={{ color: "#9bafc5" }}>
                                 {w.treasuryQty.toLocaleString()}
                               </button>
