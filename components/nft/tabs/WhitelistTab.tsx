@@ -329,19 +329,6 @@ export default function WhitelistTab({ collectionId, initialCheckAddress }: { co
                 )
               )}
 
-              {testResult.isWhitelisted && (testResult.proof?.length ?? 0) > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium" style={{ color: "#6b7280" }}>
-                    Merkle Proof ({testResult.proof!.length} elements):
-                  </p>
-                  {testResult.proof!.map((p: string, i: number) => (
-                    <p key={i} className="font-mono text-xs break-all px-2 py-1 rounded"
-                      style={{ background: "white", border: "1px solid #e5e7eb", color: "#374151" }}>
-                      {p}
-                    </p>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>
