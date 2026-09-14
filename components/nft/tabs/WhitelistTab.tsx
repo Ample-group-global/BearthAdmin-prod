@@ -6,55 +6,34 @@ import { ToastContainer } from "@/app/dashboard/whitelist/Toast";
 import { useToast } from "@/app/dashboard/whitelist/useToast";
 import { ETH_ADDRESS_RE } from "@/lib/nft-constants";
 
-type WlTab = "addresses" | "add" | "merkle" | "test" | "export";
-
-const TABS: { id: WlTab; label: string }[] = [
-  { id: "addresses", label: "All Addresses" },
-  { id: "add", label: "Add Single" },
-  { id: "merkle", label: "Merkle Root" },
-  { id: "test", label: "Test Address" },
-  { id: "export", label: "Export" },
-];
-
-const TAB_ACTIVE: React.CSSProperties = {
-  color: "#24315f", borderBottom: "2px solid #41afeb", fontWeight: 700,
-  background: "transparent", padding: "14px 16px", fontSize: 14,
-  whiteSpace: "nowrap", transition: "color 0.15s",
-};
-const TAB_INACTIVE: React.CSSProperties = {
-  color: "#9bafc5", borderBottom: "2px solid transparent", fontWeight: 600,
-  background: "transparent", padding: "14px 16px", fontSize: 14,
-  whiteSpace: "nowrap", transition: "color 0.15s",
-};
-
-const inputCls = "w-full px-3.5 py-2.5 rounded-lg text-sm font-mono outline-none focus:ring-2 focus:ring-[#41afeb]";
 const inputStyle: React.CSSProperties = { border: "1px solid #e5e7eb" };
-
-const btnPrimary = "px-4 py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40";
 const btnPrimaryStyle: React.CSSProperties = { background: "#24315f" };
 
-export default function WhitelistTab({ collectionId }: { collectionId: string }) {
+export default function WhitelistTab({ collectionId, initialCheckAddress }: { collectionId: string; initialCheckAddress?: string }) {
   const { toasts, showToast, removeToast } = useToast();
   const {
     addresses, customers, stats, isLoading, error,
     addAddress, removeAddress, testAddress,
     clearMerkleRootOverride, exportWhitelist,
-    addAddressLoading, removeAddressLoading,
-    testAddressLoading, clearMerkleRootOverrideLoading,
+    removeAddressLoading, testAddressLoading, clearMerkleRootOverrideLoading,
   } = useWhitelist(collectionId);
 
-  const [wlTab, setWlTab] = useState<WlTab>("addresses");
   const [search, setSearch] = useState("");
-  const [newAddr, setNewAddr] = useState("");
   const [newRoleCode, setNewRoleCode] = useState("customer");
   const [newFirstName, setNewFirstName] = useState("");
   const [newLastName, setNewLastName] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [showMoreFields, setShowMoreFields] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
-  const [testAddr, setTestAddr] = useState("");
+  const [testAddr, setTestAddr] = useState(initialCheckAddress ?? "");
   const [pushChainLoading, setPushChainLoading] = useState(false);
   const [pushChainTxHash, setPushChainTxHash] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{ isWhitelisted: boolean; proof?: string[] } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    isWhitelisted: boolean; proof?: string[]; syncedOnChain: boolean;
+    onChainRoot: string | null; onChainCheckError?: string;
+    customer: { userCode: string | null; name: string | null } | null;
+  } | null>(null);
+  const [quickAdding, setQuickAdding] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const PER_PAGE = 20;
@@ -68,8 +47,8 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
     catch (e: unknown) { showToast(e instanceof Error ? e.message : "Error", "error"); }
   };
 
-  const handleRegister = async () => {
-    const addr = newAddr.trim();
+  const handleRegister = async (addr: string) => {
+    addr = addr.trim();
     if (!ETH_ADDRESS_RE.test(addr)) { showToast("Invalid Ethereum address — must be 0x + 40 hex", "error"); return; }
     if (!newFirstName.trim()) { showToast("First name is required", "error"); return; }
     setRegisterLoading(true);
@@ -86,8 +65,10 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
       });
       const data = await res.json() as { ok?: boolean; error?: string; isNewUser?: boolean; roleCode?: string };
       if (!res.ok) throw new Error(data.error ?? "Registration failed");
-      setNewAddr(""); setNewFirstName(""); setNewLastName(""); setNewEmail(""); setNewRoleCode("customer");
+      setNewFirstName(""); setNewLastName(""); setNewEmail(""); setNewRoleCode("customer"); setShowMoreFields(false);
       showToast(`Wallet registered as ${data.roleCode ?? newRoleCode}${data.isNewUser ? " (new user created)" : " (linked to existing user)"}`, "success");
+      const r = await testAddress(addr);
+      setTestResult(r);
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Error", "error");
     } finally {
@@ -112,6 +93,10 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
       if (!res.ok || !data.success) throw new Error(data.error ?? "Push failed");
       setPushChainTxHash(data.txHash ?? null);
       showToast("Allowlist root pushed to contract ✓", "success");
+      if (testResult) {
+        const r = await testAddress(testAddr.trim());
+        setTestResult(r);
+      }
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : "Push failed", "error");
     } finally {
@@ -130,6 +115,21 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
     } catch (e: unknown) { showToast(e instanceof Error ? e.message : "Error", "error"); }
   };
 
+  // Only offered when the address already resolves to a known, named
+  // customer -- otherwise falls through to the named registration form
+  // below, same rule enforced everywhere else: no wallet gets whitelisted
+  // without a real customer attached to it.
+  const handleQuickAdd = async () => {
+    setQuickAdding(true);
+    try {
+      await addAddress(testAddr.trim());
+      showToast("Added to whitelist", "success");
+      const r = await testAddress(testAddr.trim());
+      setTestResult(r);
+    } catch (e: unknown) { showToast(e instanceof Error ? e.message : "Error", "error"); }
+    finally { setQuickAdding(false); }
+  };
+
   const handleExport = async (fmt: "csv" | "json" | "txt") => {
     try {
       const blob = await exportWhitelist(fmt);
@@ -145,14 +145,23 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
     if (error) showToast(error, "error");
   }, [error, showToast]);
 
+  // Deep-linked here (e.g. from a customer's wallet list) with an address
+  // already known -- run the check immediately instead of making the admin
+  // re-type it. Only fires once collectionId has resolved to something real.
+  useEffect(() => {
+    if (initialCheckAddress && collectionId) handleTest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCheckAddress, collectionId]);
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-bold" style={{ color: "#24315f" }}>Whitelist Management</h2>
           <p className="text-sm mt-0.5" style={{ color: "#9bafc5" }}>
-            {addresses.length.toLocaleString()} addresses ·{" "}
+            {addresses.length.toLocaleString()} address{addresses.length !== 1 ? "es" : ""} ·{" "}
             {stats?.merkleRoot ? `Root: ${stats.merkleRoot.slice(0, 12)}...` : "No root set"}
+            {stats?.lastUpdated && ` · updated ${new Date(stats.lastUpdated).toLocaleDateString()}`}
             {stats?.manualOverride && (
               <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                 style={{ background: "rgba(217,119,6,0.1)", color: "#d97706" }}>
@@ -161,325 +170,264 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
             )}
           </p>
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: "Total Addresses", value: addresses.length.toLocaleString() },
-          { label: "Merkle Root",     value: stats?.merkleRoot ? `${stats.merkleRoot.slice(0, 10)}...` : "—" },
-          { label: "Override Active", value: stats?.manualOverride ? "Yes" : "No" },
-          { label: "Last Updated",    value: stats?.lastUpdated ? new Date(stats.lastUpdated).toLocaleDateString() : "—" },
-        ].map((s) => (
-          <div key={s.label} className="bg-white rounded-xl p-4 shadow-sm" style={{ border: "1px solid #e5e7eb" }}>
-            <p className="text-xs mb-1" style={{ color: "#9bafc5" }}>{s.label}</p>
-            <p className="text-sm font-semibold font-mono truncate" style={{ color: "#24315f" }}>{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>
-        <div className="px-1 flex overflow-x-auto" style={{ borderBottom: "1px solid #e5e7eb" }}>
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setWlTab(t.id)}
-              style={wlTab === t.id ? TAB_ACTIVE : TAB_INACTIVE}
-            >
-              {t.label}
+        <div className="flex items-center gap-2">
+          {stats?.manualOverride && (
+            <button onClick={handleClearRoot} disabled={clearMerkleRootOverrideLoading}
+              className="px-3 py-2 text-xs font-semibold rounded-lg transition-colors disabled:opacity-40"
+              style={{ background: "rgba(217,119,6,0.08)", color: "#d97706", border: "1px solid rgba(217,119,6,0.25)" }}
+              title="This root was set outside the normal address-derived flow and won't update as addresses change">
+              {clearMerkleRootOverrideLoading ? "Clearing..." : "Clear Override & Recompute"}
             </button>
-          ))}
+          )}
+          <button onClick={handlePushToChain} disabled={pushChainLoading}
+            data-testid="push-allowlist-chain"
+            className="px-4 py-2 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40"
+            style={{ background: "#16a34a" }}
+            title="Submit the current root to the smart contract on-chain">
+            {pushChainLoading ? "Pushing..." : "⛓ Push to Contract"}
+          </button>
+        </div>
+      </div>
+      {pushChainTxHash && (
+        <p className="text-xs font-mono break-all" style={{ color: "#16a34a" }}>Tx: {pushChainTxHash}</p>
+      )}
+
+      <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4" style={{ border: "1px solid #e5e7eb" }}>
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "#9bafc5" }}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Search addresses..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#41afeb]"
+              style={{ border: "1px solid #e5e7eb" }}
+            />
+          </div>
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold"
+            style={{ background: "#f3f4f6", color: "#6b7280" }}>
+            {filtered.length} results
+          </span>
+          <div className="flex-1" />
+          <button onClick={() => handleExport("csv")}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
+            style={{ background: "white", border: "1px solid #e5e7eb", color: "#374151" }}>
+            <svg className="w-3.5 h-3.5" style={{ color: "#41afeb" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Export CSV
+          </button>
         </div>
 
-        <div className="p-5">
-          {wlTab === "addresses" && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="relative flex-1 max-w-sm">
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "#9bafc5" }}
-                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <input
-                    value={search}
-                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                    placeholder="Search addresses..."
-                    className="w-full pl-9 pr-3 py-2 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#41afeb]"
-                    style={{ border: "1px solid #e5e7eb" }}
-                  />
-                </div>
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold"
-                  style={{ background: "#f3f4f6", color: "#6b7280" }}>
-                  {filtered.length} results
-                </span>
-              </div>
+        <div className="p-3 rounded-xl" style={{ background: "#f9fafb", border: "1px solid #e5e7eb" }}>
+          <p className="text-xs font-semibold mb-2" style={{ color: "#6b7280" }}>Check or add any address</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={testAddr} onChange={(e) => { setTestAddr(e.target.value); setTestResult(null); }}
+              placeholder="0x..."
+              className="px-3 py-1.5 rounded-lg text-xs font-mono outline-none focus:ring-2 focus:ring-[#41afeb]"
+              style={{ ...inputStyle, minWidth: 320, flex: 1 }} />
+            <button onClick={handleTest} disabled={testAddressLoading || !testAddr.trim()}
+              className="px-3 py-1.5 text-xs font-semibold text-white rounded-lg disabled:opacity-40"
+              style={btnPrimaryStyle}>
+              {testAddressLoading ? "Checking..." : "Check"}
+            </button>
+          </div>
 
-              {isLoading ? (
-                <div className="space-y-2">{[...Array(5)].map((_, i) => (
-                  <div key={i} className="h-10 rounded-lg animate-pulse" style={{ background: "#f3f4f6" }} />
-                ))}</div>
-              ) : paginated.length === 0 ? (
-                <div className="text-center py-10 text-sm" style={{ color: "#9bafc5" }}>No addresses found</div>
-              ) : (
-                <>
-                  <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid #e5e7eb" }}>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
-                          <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>#</th>
-                          <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Customer</th>
-                          <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Address</th>
-                          <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginated.map((addr, i) => (
-                          <tr key={addr}
-                            style={{ borderTop: i === 0 ? "none" : "1px solid #f3f4f6" }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "#fafbff")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "")}>
-                            <td className="px-4 py-3 font-mono text-xs" style={{ color: "#9bafc5" }}>{(page - 1) * PER_PAGE + i + 1}</td>
-                            <td className="px-4 py-3 text-xs">
-                              {customers[addr.toLowerCase()] ? (
-                                <div>
-                                  <div className="font-semibold" style={{ color: "#24315f" }}>{customers[addr.toLowerCase()].name || "(no name)"}</div>
-                                  <div className="font-mono" style={{ color: "#9bafc5" }}>{customers[addr.toLowerCase()].userCode || "—"}</div>
-                                </div>
-                              ) : (
-                                <span style={{ color: "#9bafc5" }}>Not registered</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 font-mono text-xs break-all" style={{ color: "#24315f" }}>{addr}</td>
-                            <td className="px-4 py-3 text-right">
-                              {confirmRemove === addr ? (
-                                <div className="flex items-center justify-end gap-2">
-                                  <span className="text-xs" style={{ color: "#dc2626" }}>Confirm?</span>
-                                  <button onClick={() => { handleRemove(addr); setConfirmRemove(null); }}
-                                    className="text-xs px-2 py-1 rounded text-white" style={{ background: "#dc2626" }}>
-                                    Yes
-                                  </button>
-                                  <button onClick={() => setConfirmRemove(null)}
-                                    className="text-xs px-2 py-1 rounded" style={{ background: "#f3f4f6", color: "#6b7280" }}>
-                                    No
-                                  </button>
-                                </div>
-                              ) : (
-                                <button onClick={() => setConfirmRemove(addr)}
-                                  disabled={removeAddressLoading}
-                                  className="text-xs px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                                  style={{ color: "#dc2626", background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.15)" }}>
-                                  Remove
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-between text-sm" style={{ color: "#9bafc5" }}>
-                      <span>Page {page} of {totalPages}</span>
-                      <div className="flex gap-2">
-                        <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40"
-                          style={{ border: "1px solid #e5e7eb", color: "#374151", background: "white" }}>
-                          ← Prev
-                        </button>
-                        <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40"
-                          style={{ border: "1px solid #e5e7eb", color: "#374151", background: "white" }}>
-                          Next →
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {wlTab === "add" && (
-            <div className="max-w-md space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold" style={{ color: "#24315f" }}>Register Wallet</h3>
-                <p className="text-xs mt-0.5" style={{ color: "#9bafc5" }}>
-                  Every whitelisted wallet must belong to a registered user. Select the user type, fill in their details, then register.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>User Type</label>
-                <select
-                  value={newRoleCode}
-                  onChange={(e) => setNewRoleCode(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#41afeb] bg-white"
-                  style={{ border: "1px solid #e5e7eb", color: "#24315f" }}>
-                  <option value="customer">Customer — can mint NFTs</option>
-                  <option value="technical_team">Team Member — internal / testing</option>
-                  <option value="ext_referrer">Partner — referral / collaboration</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>Wallet Address <span style={{ color: "#dc2626" }}>*</span></label>
-                <input value={newAddr} onChange={(e) => setNewAddr(e.target.value)}
-                  placeholder="0x..."
-                  className={inputCls}
-                  style={inputStyle} />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>First Name <span style={{ color: "#dc2626" }}>*</span></label>
-                <input value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)}
-                  placeholder="e.g. John"
-                  className={inputCls}
-                  style={inputStyle} />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>Last Name</label>
-                  <input value={newLastName} onChange={(e) => setNewLastName(e.target.value)}
-                    placeholder="Optional"
-                    className={inputCls}
-                    style={inputStyle} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>Email</label>
-                  <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
-                    placeholder="Optional"
-                    type="email"
-                    className={inputCls}
-                    style={inputStyle} />
-                </div>
-              </div>
-
-              <div className="pt-1 p-3 rounded-lg text-xs" style={{ background: "rgba(65,175,235,0.06)", border: "1px solid rgba(65,175,235,0.2)", color: "#1e6fa8" }}>
-                If email matches an existing user, the wallet is linked to that user instead of creating a new one.
-              </div>
-
-              <button onClick={handleRegister} disabled={registerLoading || !newAddr.trim() || !newFirstName.trim()}
-                className={btnPrimary}
-                style={btnPrimaryStyle}>
-                {registerLoading ? "Registering..." : "Register & Add to Whitelist"}
-              </button>
-            </div>
-          )}
-
-          {wlTab === "merkle" && (
-            <div className="max-w-lg space-y-5">
-              <div className="p-4 rounded-xl" style={{ background: "#f9fafb", border: "1px solid #e5e7eb" }}>
-                <p className="text-xs font-medium mb-1" style={{ color: "#9bafc5" }}>Current Merkle Root</p>
-                <p className="font-mono text-xs break-all" style={{ color: "#24315f" }}>{stats?.merkleRoot || "Not set"}</p>
-                {stats?.manualOverride && (
-                  <>
-                    <span className="inline-flex items-center mt-2 px-2 py-0.5 rounded-full text-xs font-medium"
-                      style={{ background: "rgba(217,119,6,0.1)", color: "#d97706" }}>
-                      Manual Override Active
-                    </span>
-                    <p className="text-xs mt-2" style={{ color: "#9bafc5" }}>
-                      This root was set outside the normal address-derived flow and will not update automatically as addresses change.
-                    </p>
-                    <button onClick={handleClearRoot} disabled={clearMerkleRootOverrideLoading}
-                      className="mt-3 px-4 py-2 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-40"
-                      style={{ background: "#6b7280" }}>
-                      {clearMerkleRootOverrideLoading ? "Clearing..." : "Clear Override & Recompute"}
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="pt-4 mt-2" style={{ borderTop: "1px solid #e5e7eb" }}>
-                <h3 className="text-sm font-semibold mb-1" style={{ color: "#24315f" }}>Push to Blockchain</h3>
-                <p className="text-xs mb-3" style={{ color: "#9bafc5" }}>
-                  Submit the current merkle root to the smart contract on-chain. Requires gas from the operations wallet.
-                </p>
-                <button
-                  onClick={handlePushToChain}
-                  disabled={pushChainLoading}
-                  data-testid="push-allowlist-chain"
-                  className="px-4 py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40"
-                  style={{ background: "#16a34a" }}>
-                  {pushChainLoading ? "Pushing..." : "Push to Contract"}
-                </button>
-                {pushChainTxHash && (
-                  <p className="text-xs mt-2 font-mono break-all" style={{ color: "#16a34a" }}>
-                    Tx: {pushChainTxHash}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {wlTab === "test" && (
-            <div className="max-w-md space-y-4">
-              <h3 className="text-sm font-semibold" style={{ color: "#24315f" }}>Test Address Membership</h3>
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>Ethereum Address</label>
-                <input value={testAddr} onChange={(e) => { setTestAddr(e.target.value); setTestResult(null); }}
-                  placeholder="0x..."
-                  className={inputCls}
-                  style={inputStyle} />
-              </div>
-              <button onClick={handleTest} disabled={testAddressLoading || !testAddr.trim()}
-                className={btnPrimary}
-                style={btnPrimaryStyle}>
-                {testAddressLoading ? "Checking..." : "Check Eligibility"}
-              </button>
-              {testResult && (
-                <div className={`p-4 rounded-xl`}
+          {testResult && (
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold px-2 py-1 rounded-full"
                   style={{
-                    background: testResult.isWhitelisted ? "rgba(22,163,74,0.06)" : "rgba(239,68,68,0.06)",
-                    border: `1px solid ${testResult.isWhitelisted ? "rgba(22,163,74,0.2)" : "rgba(239,68,68,0.2)"}`,
+                    background: testResult.isWhitelisted ? "rgba(22,163,74,0.1)" : "rgba(239,68,68,0.1)",
+                    color: testResult.isWhitelisted ? "#16a34a" : "#dc2626",
                   }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="font-semibold text-sm"
-                      style={{ color: testResult.isWhitelisted ? "#16a34a" : "#dc2626" }}>
-                      {testResult.isWhitelisted ? "✓ Whitelisted" : "✗ Not Whitelisted"}
-                    </span>
+                  {testResult.isWhitelisted ? "✓ In database" : "✗ Not in database"}
+                </span>
+                {testResult.isWhitelisted && (
+                  <span className="text-xs font-semibold px-2 py-1 rounded-full"
+                    style={{
+                      background: testResult.syncedOnChain ? "rgba(22,163,74,0.1)" : "rgba(217,119,6,0.1)",
+                      color: testResult.syncedOnChain ? "#16a34a" : "#d97706",
+                    }}>
+                    {testResult.syncedOnChain ? "✓ Synced on-chain" : "⚠ Not yet pushed on-chain"}
+                  </span>
+                )}
+                {testResult.customer && (
+                  <span className="text-xs" style={{ color: "#6b7280" }}>
+                    Customer: <span className="font-semibold" style={{ color: "#24315f" }}>{testResult.customer.name || "(no name)"}</span>
+                    {testResult.customer.userCode && <span className="font-mono"> ({testResult.customer.userCode})</span>}
+                  </span>
+                )}
+              </div>
+
+              {testResult.onChainCheckError && (
+                <p className="text-xs" style={{ color: "#d97706" }}>Could not verify on-chain: {testResult.onChainCheckError}</p>
+              )}
+
+              {testResult.isWhitelisted && !testResult.syncedOnChain && (
+                <div className="flex items-center justify-between gap-2 text-xs px-3 py-2 rounded-lg" style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>
+                  <span>In the database, but the last on-chain push predates this address.</span>
+                  <button onClick={handlePushToChain} disabled={pushChainLoading}
+                    className="px-2.5 py-1 text-xs font-semibold text-white rounded-lg disabled:opacity-40 flex-shrink-0"
+                    style={{ background: "#16a34a" }}>
+                    {pushChainLoading ? "Pushing..." : "Push Now"}
+                  </button>
+                </div>
+              )}
+
+              {!testResult.isWhitelisted && (
+                testResult.customer ? (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs" style={{ color: "#6b7280" }}>
+                      Already a registered customer — add directly, no new name needed.
+                    </p>
+                    <button onClick={handleQuickAdd} disabled={quickAdding}
+                      className="px-3 py-1.5 text-xs font-semibold text-white rounded-lg disabled:opacity-40"
+                      style={{ background: "#16a34a" }}>
+                      {quickAdding ? "Adding..." : "Add to Whitelist"}
+                    </button>
                   </div>
-                  {testResult.isWhitelisted && (testResult.proof?.length ?? 0) > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-xs font-medium mb-2" style={{ color: "#6b7280" }}>
-                        Merkle Proof ({testResult.proof!.length} elements):
-                      </p>
-                      {testResult.proof!.map((p: string, i: number) => (
-                        <p key={i} className="font-mono text-xs break-all px-2 py-1 rounded"
-                          style={{ background: "white", border: "1px solid #e5e7eb", color: "#374151" }}>
-                          {p}
-                        </p>
-                      ))}
+                ) : (
+                  <div className="p-3 rounded-lg space-y-2" style={{ background: "white", border: "1px solid #e5e7eb" }}>
+                    <p className="text-xs" style={{ color: "#6b7280" }}>
+                      No customer record for this address yet — register one to add it (every whitelisted wallet must belong to a named customer).
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)}
+                        placeholder="First name *" className="px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#41afeb]" style={inputStyle} />
+                      <input value={newLastName} onChange={(e) => setNewLastName(e.target.value)}
+                        placeholder="Last name" className="px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#41afeb]" style={inputStyle} />
                     </div>
-                  )}
+                    {showMoreFields ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <select value={newRoleCode} onChange={(e) => setNewRoleCode(e.target.value)}
+                          className="px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#41afeb] bg-white" style={{ ...inputStyle, color: "#24315f" }}>
+                          <option value="customer">Customer — can mint NFTs</option>
+                          <option value="technical_team">Team Member — internal / testing</option>
+                          <option value="ext_referrer">Partner — referral / collaboration</option>
+                        </select>
+                        <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
+                          placeholder="Email (optional)" type="email"
+                          className="px-3 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#41afeb]" style={inputStyle} />
+                      </div>
+                    ) : (
+                      <button onClick={() => setShowMoreFields(true)} className="text-xs font-semibold" style={{ color: "#41afeb" }}>
+                        + Set user type / email (defaults to Customer)
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleRegister(testAddr)}
+                      disabled={registerLoading || !newFirstName.trim()}
+                      className="px-3 py-1.5 text-xs font-semibold text-white rounded-lg disabled:opacity-40"
+                      style={btnPrimaryStyle}>
+                      {registerLoading ? "Registering..." : "Register & Add to Whitelist"}
+                    </button>
+                  </div>
+                )
+              )}
+
+              {testResult.isWhitelisted && (testResult.proof?.length ?? 0) > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium" style={{ color: "#6b7280" }}>
+                    Merkle Proof ({testResult.proof!.length} elements):
+                  </p>
+                  {testResult.proof!.map((p: string, i: number) => (
+                    <p key={i} className="font-mono text-xs break-all px-2 py-1 rounded"
+                      style={{ background: "white", border: "1px solid #e5e7eb", color: "#374151" }}>
+                      {p}
+                    </p>
+                  ))}
                 </div>
               )}
             </div>
           )}
-
-          {wlTab === "export" && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold" style={{ color: "#24315f" }}>Export Whitelist</h3>
-              <p className="text-sm" style={{ color: "#9bafc5" }}>{addresses.length} addresses available to export</p>
-              <div className="flex flex-wrap gap-3">
-                <button onClick={() => handleExport("csv")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  style={{ background: "white", border: "1px solid #e5e7eb", color: "#374151" }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = "#41afeb";
-                    (e.currentTarget as HTMLButtonElement).style.background = "rgba(65,175,235,0.06)";
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = "#e5e7eb";
-                    (e.currentTarget as HTMLButtonElement).style.background = "white";
-                  }}>
-                  <svg className="w-4 h-4" style={{ color: "#41afeb" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Download .CSV
-                </button>
-              </div>
-            </div>
-          )}
         </div>
+
+        {isLoading ? (
+          <div className="space-y-2">{[...Array(5)].map((_, i) => (
+            <div key={i} className="h-10 rounded-lg animate-pulse" style={{ background: "#f3f4f6" }} />
+          ))}</div>
+        ) : paginated.length === 0 ? (
+          <div className="text-center py-10 text-sm" style={{ color: "#9bafc5" }}>No addresses found</div>
+        ) : (
+          <>
+            <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid #e5e7eb" }}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                    <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>#</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Customer</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Address</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map((addr, i) => (
+                    <tr key={addr}
+                      style={{ borderTop: i === 0 ? "none" : "1px solid #f3f4f6" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "#fafbff")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "")}>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: "#9bafc5" }}>{(page - 1) * PER_PAGE + i + 1}</td>
+                      <td className="px-4 py-3 text-xs">
+                        {customers[addr.toLowerCase()] ? (
+                          <div>
+                            <div className="font-semibold" style={{ color: "#24315f" }}>{customers[addr.toLowerCase()].name || "(no name)"}</div>
+                            <div className="font-mono" style={{ color: "#9bafc5" }}>{customers[addr.toLowerCase()].userCode || "—"}</div>
+                          </div>
+                        ) : (
+                          <span style={{ color: "#9bafc5" }}>Not registered</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs break-all" style={{ color: "#24315f" }}>{addr}</td>
+                      <td className="px-4 py-3 text-right">
+                        {confirmRemove === addr ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="text-xs" style={{ color: "#dc2626" }}>Confirm?</span>
+                            <button onClick={() => { handleRemove(addr); setConfirmRemove(null); }}
+                              className="text-xs px-2 py-1 rounded text-white" style={{ background: "#dc2626" }}>
+                              Yes
+                            </button>
+                            <button onClick={() => setConfirmRemove(null)}
+                              className="text-xs px-2 py-1 rounded" style={{ background: "#f3f4f6", color: "#6b7280" }}>
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setConfirmRemove(addr)}
+                            disabled={removeAddressLoading}
+                            className="text-xs px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                            style={{ color: "#dc2626", background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.15)" }}>
+                            Remove
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between text-sm" style={{ color: "#9bafc5" }}>
+                <span>Page {page} of {totalPages}</span>
+                <div className="flex gap-2">
+                  <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40"
+                    style={{ border: "1px solid #e5e7eb", color: "#374151", background: "white" }}>
+                    ← Prev
+                  </button>
+                  <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40"
+                    style={{ border: "1px solid #e5e7eb", color: "#374151", background: "white" }}>
+                    Next →
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <ToastContainer toasts={toasts} onClose={removeToast} />

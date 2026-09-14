@@ -91,7 +91,14 @@ export function useWhitelist(collectionId: string) {
         throw new Error(data.detail || data.error || "Failed to test address");
       }
       const data = await res.json();
-      return { isWhitelisted: Boolean(data.is_whitelisted), proof: data.proof ?? [] };
+      return {
+        isWhitelisted: Boolean(data.inDatabase),
+        proof: data.proof ?? [],
+        syncedOnChain: Boolean(data.syncedOnChain),
+        onChainRoot: data.onChainRoot as string | null,
+        onChainCheckError: data.onChainCheckError as string | undefined,
+        customer: data.customer as { userCode: string | null; name: string | null } | null,
+      };
     } finally {
       setTestAddressLoading(false);
     }

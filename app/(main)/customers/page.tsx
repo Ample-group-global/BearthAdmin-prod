@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import DataTable, { type ColumnDef } from "@/components/DataTable";
 
 interface Customer {
@@ -274,39 +275,18 @@ export default function CustomersPage() {
             </button>
           );
         }
-        const VISIBLE = 2;
-        const shown = addrs.slice(0, VISIBLE);
-        const extra = addrs.length - shown.length;
         return (
-          <div className="flex flex-col items-start gap-0.5 text-left">
-            {shown.map((addr) => (
-              <span key={addr} className="flex items-center gap-1">
-                <button
-                  onClick={() => openWallets(c)}
-                  className="font-mono text-xs px-1.5 py-0.5 rounded"
-                  style={{ background: "rgba(65,175,235,0.1)", color: "#41afeb" }}
-                  title="Click to manage wallets"
-                >
-                  {addr.slice(0, 6)}…{addr.slice(-4)}
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(addr); setCopiedId(addr); setTimeout(() => setCopiedId((id) => id === addr ? null : id), 2000); }}
-                  className="flex-shrink-0"
-                  style={{ color: copiedId === addr ? "#16a34a" : "#9bafc5" }}
-                  title={copiedId === addr ? "Copied!" : "Copy address"}
-                >
-                  {copiedId === addr ? (
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                  ) : (
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                  )}
-                </button>
-              </span>
-            ))}
-            {extra > 0 && (
-              <button onClick={() => openWallets(c)} className="text-xs font-semibold" style={{ color: "#9bafc5" }}>+{extra} more</button>
-            )}
-          </div>
+          <button
+            onClick={() => openWallets(c)}
+            className="flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-lg"
+            style={{ background: "rgba(65,175,235,0.1)", color: "#41afeb" }}
+            title="Click to view and manage wallets"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M21 12a2 2 0 00-2-2H5a2 2 0 00-2 2m18 0v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6m18 0V9a2 2 0 00-2-2H8L5 4H3a1 1 0 00-1 1v14a1 1 0 001 1" />
+            </svg>
+            {addrs.length} wallet{addrs.length !== 1 ? "s" : ""}
+          </button>
         );
       },
     },
@@ -481,11 +461,13 @@ export default function CustomersPage() {
                             </div>
                           </td>
                           <td className="py-2 text-center">
-                            {w.isWhitelisted ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: "rgba(22,163,74,0.1)", color: "#16a34a" }}>Listed</span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: "rgba(156,163,175,0.1)", color: "#9ca3af" }}>Not Listed</span>
-                            )}
+                            <Link
+                              href={`/nft/contractoperation?tab=whitelist&checkAddress=${w.address}`}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold transition-colors"
+                              style={{ background: "rgba(65,175,235,0.1)", color: "#41afeb" }}
+                              title="Check real per-collection whitelist status in Contract Operations">
+                              Check status →
+                            </Link>
                           </td>
                           <td className="py-2 text-right text-xs" style={{ color: "#9bafc5" }}>
                             {w.addedAt ? new Date(w.addedAt).toLocaleDateString() : "N/A"}

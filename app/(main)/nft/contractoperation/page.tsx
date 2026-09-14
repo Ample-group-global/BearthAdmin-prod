@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { useInterval } from "@/lib/useInterval";
 import { ErrBanner, TxBanner } from "@/components/nft/Banner";
 import MintOperationsTab, { type OnChainInfo, type CollectionConfig } from "@/components/nft/tabs/MintOperationsTab";
 import CollectionControlsTab, { type ContractEvent }                   from "@/components/nft/tabs/CollectionControlsTab";
 import RoyaltyTab    from "@/components/nft/tabs/RoyaltyTab";
-import MembershipTab from "@/components/nft/tabs/MembershipTab";
 import AdvancedTab   from "@/components/nft/tabs/AdvancedTab";
 import WhitelistTab  from "@/components/nft/tabs/WhitelistTab";
 
@@ -15,15 +15,25 @@ const TABS: { key: string; label: string }[] = [
   { key: "Collection & Controls", label: "Collection & Controls" },
   { key: "Whitelist",             label: "Whitelist" },
   { key: "Royalty",               label: "Royalty" },
-  { key: "Membership",            label: "Membership" },
   { key: "Advanced",              label: "Advanced" },
 ];
-type Tab = "Mint Operations" | "Collection & Controls" | "Whitelist" | "Royalty" | "Membership" | "Advanced";
+type Tab = "Mint Operations" | "Collection & Controls" | "Whitelist" | "Royalty" | "Advanced";
 
 interface CollectionOption { id: string; name: string; }
 
+const TAB_BY_KEY: Record<string, Tab> = {
+  "mint-operations": "Mint Operations",
+  "collection-controls": "Collection & Controls",
+  whitelist: "Whitelist",
+  royalty: "Royalty",
+  advanced: "Advanced",
+};
+
 export default function ContractOperationPage() {
-  const [tab, setTab] = useState<Tab>("Mint Operations");
+  const searchParams = useSearchParams();
+  const initialTab = TAB_BY_KEY[searchParams.get("tab") ?? ""] ?? "Mint Operations";
+  const checkAddress = searchParams.get("checkAddress") ?? "";
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   const [collections,  setCollections]  = useState<CollectionOption[]>([]);
   const [collectionId, setCollectionId] = useState<string>("");
@@ -182,9 +192,8 @@ export default function ContractOperationPage() {
       <div className="flex-1 overflow-y-auto px-5 py-5">
         {tab === "Mint Operations"      && <MintOperationsTab    collectionId={collectionId} onChain={onChain} config={config} onRefresh={load} />}
         {tab === "Collection & Controls" && <CollectionControlsTab collectionId={collectionId} onChain={onChain} config={config} events={events} onRefresh={load} />}
-        {tab === "Whitelist"            && <WhitelistTab collectionId={collectionId} />}
+        {tab === "Whitelist"            && <WhitelistTab collectionId={collectionId} initialCheckAddress={checkAddress} />}
         {tab === "Royalty"              && <RoyaltyTab collectionId={collectionId} />}
-        {tab === "Membership"           && <MembershipTab collectionId={collectionId} />}
         {tab === "Advanced"             && <AdvancedTab collectionId={collectionId} />}
       </div>
     </div>
