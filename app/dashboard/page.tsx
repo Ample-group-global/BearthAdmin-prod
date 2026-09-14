@@ -32,6 +32,7 @@ interface WaveRow {
   priceEth: number;
   quantity: number;
   soldCount: number;
+  treasuryQty: number;
   revenueEth: number;
 }
 
@@ -245,6 +246,12 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [collections, setCollections] = useState<CollectionOption[]>([]);
   const [collectionId, setCollectionId] = useState("");
+  const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
+  const copyAddr = (addr: string) => {
+    navigator.clipboard?.writeText(addr);
+    setCopiedAddr(addr);
+    setTimeout(() => setCopiedAddr((id) => id === addr ? null : id), 2000);
+  };
   const router = useRouter();
   const collectionName = collections.find(c => c.id === collectionId)?.name ?? "";
 
@@ -406,7 +413,7 @@ export default function DashboardPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
-                        {["Wave", "Status", "Price (ETH)", "Qty", "Sold", "Revenue (ETH)"].map((h, i) => (
+                        {["Wave", "Status", "Price (ETH)", "Qty", "Sold", "Treasury Qty", "Revenue (ETH)"].map((h, i) => (
                           <th key={h} className={i === 0 ? "text-left" : "text-right"}
                             style={{ padding: "10px 16px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#9bafc5" }}>
                             {h}
@@ -430,7 +437,12 @@ export default function DashboardPage() {
                             </span>
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151" }}>{w.priceEth || "Free"}</td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151" }}>{w.quantity.toLocaleString()}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                            <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
+                              className="hover:underline" style={{ color: "#41afeb" }}>
+                              {w.quantity.toLocaleString()}
+                            </button>
+                          </td>
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
                             {w.soldCount > 0 ? (
                               <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
@@ -439,6 +451,16 @@ export default function DashboardPage() {
                               </button>
                             ) : (
                               <span style={{ color: "#374151" }}>{w.soldCount.toLocaleString()}</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                            {w.treasuryQty > 0 ? (
+                              <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
+                                className="hover:underline" style={{ color: "#9bafc5" }}>
+                                {w.treasuryQty.toLocaleString()}
+                              </button>
+                            ) : (
+                              <span style={{ color: "#374151" }}>0</span>
                             )}
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151" }}>{w.revenueEth.toFixed(4)}</td>
@@ -487,8 +509,22 @@ export default function DashboardPage() {
                           <td style={{ padding: "12px 16px", fontSize: 12, color: "#6b7280" }}>{w.userCode ?? "—"}</td>
                           <td style={{ padding: "12px 16px", fontWeight: 600, color: "#24315f" }}>{w.customerName}</td>
                           <td style={{ padding: "12px 16px", fontSize: 12, color: "#6b7280" }}>{w.referrerName ?? "—"}</td>
-                          <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, color: "#6b7280" }}>
-                            {w.address.slice(0, 8)}…{w.address.slice(-6)}
+                          <td style={{ padding: "12px 16px" }}>
+                            <div className="flex items-center gap-1.5">
+                              <span style={{ fontFamily: "monospace", fontSize: 12, color: "#6b7280" }}>
+                                {w.address.slice(0, 8)}…{w.address.slice(-6)}
+                              </span>
+                              <button
+                                onClick={() => copyAddr(w.address)}
+                                style={{ color: copiedAddr === w.address ? "#16a34a" : "#9bafc5" }}
+                                title={copiedAddr === w.address ? "Copied!" : "Copy address"}>
+                                {copiedAddr === w.address ? (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                ) : (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                )}
+                              </button>
+                            </div>
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
                             <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
