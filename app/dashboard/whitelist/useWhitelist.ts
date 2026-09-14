@@ -14,10 +14,8 @@ export function useWhitelist(collectionId: string) {
   const [error, setError] = useState<string | null>(null);
 
   const [addAddressLoading, setAddAddressLoading] = useState(false);
-  const [addAddressesLoading, setAddAddressesLoading] = useState(false);
   const [removeAddressLoading, setRemoveAddressLoading] = useState(false);
   const [testAddressLoading, setTestAddressLoading] = useState(false);
-  const [setMerkleRootLoading, setSetMerkleRootLoading] = useState(false);
   const [clearMerkleRootOverrideLoading, setClearMerkleRootOverrideLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -64,24 +62,6 @@ export function useWhitelist(collectionId: string) {
     }
   }, [load, collectionId]);
 
-  const addAddressesBulk = useCallback(async (list: string[]) => {
-    setAddAddressesLoading(true);
-    try {
-      const res = await fetch("/api/whitelist/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addresses: list, collectionId }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || data.error || "Failed to import addresses");
-      }
-      await load();
-    } finally {
-      setAddAddressesLoading(false);
-    }
-  }, [load, collectionId]);
-
   const removeAddress = useCallback(async (address: string) => {
     setRemoveAddressLoading(true);
     try {
@@ -117,24 +97,13 @@ export function useWhitelist(collectionId: string) {
     }
   }, [collectionId]);
 
-  const setMerkleRoot = useCallback(async (root: string) => {
-    setSetMerkleRootLoading(true);
-    try {
-      const res = await fetch("/api/whitelist/merkle-root", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ root, collectionId }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || data.error || "Failed to set merkle root");
-      }
-      await load();
-    } finally {
-      setSetMerkleRootLoading(false);
-    }
-  }, [load, collectionId]);
-
+  // Deliberately no setMerkleRoot() here -- an admin pasting an arbitrary
+  // root with no validation against the real address list is exactly the
+  // kind of silent-divergence footgun this app's collection-scoping work
+  // has spent a lot of effort eliminating. The backend PUT /merkle-root
+  // route still exists for genuine emergency recovery, but is intentionally
+  // not one click away in the UI. clearMerkleRootOverride() below remains
+  // as a safety valve to undo an override, never to create one.
   const clearMerkleRootOverride = useCallback(async () => {
     setClearMerkleRootOverrideLoading(true);
     try {
@@ -159,9 +128,9 @@ export function useWhitelist(collectionId: string) {
 
   return {
     addresses, customers, stats, isLoading, error,
-    addAddress, addAddressesBulk, removeAddress, testAddress,
-    setMerkleRoot, clearMerkleRootOverride, exportWhitelist,
-    addAddressLoading, addAddressesLoading, removeAddressLoading,
-    testAddressLoading, setMerkleRootLoading, clearMerkleRootOverrideLoading,
+    addAddress, removeAddress, testAddress,
+    clearMerkleRootOverride, exportWhitelist,
+    addAddressLoading, removeAddressLoading,
+    testAddressLoading, clearMerkleRootOverrideLoading,
   };
 }

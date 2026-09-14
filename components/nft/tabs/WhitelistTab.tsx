@@ -6,12 +6,11 @@ import { ToastContainer } from "@/app/dashboard/whitelist/Toast";
 import { useToast } from "@/app/dashboard/whitelist/useToast";
 import { ETH_ADDRESS_RE } from "@/lib/nft-constants";
 
-type WlTab = "addresses" | "add" | "bulk" | "merkle" | "test" | "export";
+type WlTab = "addresses" | "add" | "merkle" | "test" | "export";
 
 const TABS: { id: WlTab; label: string }[] = [
   { id: "addresses", label: "All Addresses" },
   { id: "add", label: "Add Single" },
-  { id: "bulk", label: "Bulk Import" },
   { id: "merkle", label: "Merkle Root" },
   { id: "test", label: "Test Address" },
   { id: "export", label: "Export" },
@@ -38,10 +37,10 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
   const { toasts, showToast, removeToast } = useToast();
   const {
     addresses, customers, stats, isLoading, error,
-    addAddress, addAddressesBulk, removeAddress, testAddress,
-    setMerkleRoot, clearMerkleRootOverride, exportWhitelist,
-    addAddressLoading, addAddressesLoading, removeAddressLoading,
-    testAddressLoading, setMerkleRootLoading, clearMerkleRootOverrideLoading,
+    addAddress, removeAddress, testAddress,
+    clearMerkleRootOverride, exportWhitelist,
+    addAddressLoading, removeAddressLoading,
+    testAddressLoading, clearMerkleRootOverrideLoading,
   } = useWhitelist(collectionId);
 
   const [wlTab, setWlTab] = useState<WlTab>("addresses");
@@ -52,8 +51,6 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
   const [newLastName, setNewLastName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [registerLoading, setRegisterLoading] = useState(false);
-  const [bulkText, setBulkText] = useState("");
-  const [merkleInput, setMerkleInput] = useState("");
   const [testAddr, setTestAddr] = useState("");
   const [pushChainLoading, setPushChainLoading] = useState(false);
   const [pushChainTxHash, setPushChainTxHash] = useState<string | null>(null);
@@ -98,21 +95,8 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
     }
   };
 
-  const handleBulk = () => {
-    const list = bulkText.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
-    const invalid = list.filter(a => !ETH_ADDRESS_RE.test(a));
-    if (invalid.length > 0) {
-      showToast(`${invalid.length} invalid address(es) found — fix before importing`, "error");
-      return;
-    }
-    wrap(async () => { await addAddressesBulk(list); setBulkText(""); }, `${list.length} addresses added`);
-  };
-
   const handleRemove = (addr: string) =>
     wrap(() => removeAddress(addr), "Address removed");
-
-  const handleSetRoot = () =>
-    wrap(async () => { await setMerkleRoot(merkleInput.trim()); setMerkleInput(""); }, "Merkle root set");
 
   const handlePushToChain = async () => {
     setPushChainLoading(true);
@@ -382,57 +366,27 @@ export default function WhitelistTab({ collectionId }: { collectionId: string })
             </div>
           )}
 
-          {wlTab === "bulk" && (
-            <div className="max-w-lg space-y-4">
-              <h3 className="text-sm font-semibold" style={{ color: "#24315f" }}>Bulk Import</h3>
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "#6b7280" }}>One address per line (or comma-separated)</label>
-                <textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)} rows={10}
-                  placeholder={"0xAb5801...\n0x742d35...\n0xd8dA6B..."}
-                  className="w-full px-3.5 py-2.5 rounded-lg text-sm font-mono outline-none focus:ring-2 focus:ring-[#41afeb] resize-y"
-                  style={inputStyle} />
-                <p className="text-xs mt-1" style={{ color: "#9bafc5" }}>
-                  {bulkText.split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length} addresses detected
-                </p>
-              </div>
-              <button onClick={handleBulk} disabled={addAddressesLoading || !bulkText.trim()}
-                className={btnPrimary}
-                style={btnPrimaryStyle}>
-                {addAddressesLoading ? "Importing..." : "Import Addresses"}
-              </button>
-            </div>
-          )}
-
           {wlTab === "merkle" && (
             <div className="max-w-lg space-y-5">
               <div className="p-4 rounded-xl" style={{ background: "#f9fafb", border: "1px solid #e5e7eb" }}>
                 <p className="text-xs font-medium mb-1" style={{ color: "#9bafc5" }}>Current Merkle Root</p>
                 <p className="font-mono text-xs break-all" style={{ color: "#24315f" }}>{stats?.merkleRoot || "Not set"}</p>
                 {stats?.manualOverride && (
-                  <span className="inline-flex items-center mt-2 px-2 py-0.5 rounded-full text-xs font-medium"
-                    style={{ background: "rgba(217,119,6,0.1)", color: "#d97706" }}>
-                    Manual Override Active
-                  </span>
+                  <>
+                    <span className="inline-flex items-center mt-2 px-2 py-0.5 rounded-full text-xs font-medium"
+                      style={{ background: "rgba(217,119,6,0.1)", color: "#d97706" }}>
+                      Manual Override Active
+                    </span>
+                    <p className="text-xs mt-2" style={{ color: "#9bafc5" }}>
+                      This root was set outside the normal address-derived flow and will not update automatically as addresses change.
+                    </p>
+                    <button onClick={handleClearRoot} disabled={clearMerkleRootOverrideLoading}
+                      className="mt-3 px-4 py-2 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-40"
+                      style={{ background: "#6b7280" }}>
+                      {clearMerkleRootOverrideLoading ? "Clearing..." : "Clear Override & Recompute"}
+                    </button>
+                  </>
                 )}
-              </div>
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold" style={{ color: "#24315f" }}>Set Manual Override</h3>
-                <input value={merkleInput} onChange={(e) => setMerkleInput(e.target.value)}
-                  placeholder="0x..."
-                  className={inputCls}
-                  style={inputStyle} />
-                <div className="flex gap-3">
-                  <button onClick={handleSetRoot} disabled={setMerkleRootLoading || !merkleInput.trim()}
-                    className="px-4 py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40"
-                    style={{ background: "#d97706" }}>
-                    {setMerkleRootLoading ? "Setting..." : "Set Root"}
-                  </button>
-                  <button onClick={handleClearRoot} disabled={clearMerkleRootOverrideLoading}
-                    className="px-4 py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40"
-                    style={{ background: "#6b7280" }}>
-                    {clearMerkleRootOverrideLoading ? "Clearing..." : "Clear Override"}
-                  </button>
-                </div>
               </div>
               <div className="pt-4 mt-2" style={{ borderTop: "1px solid #e5e7eb" }}>
                 <h3 className="text-sm font-semibold mb-1" style={{ color: "#24315f" }}>Push to Blockchain</h3>
