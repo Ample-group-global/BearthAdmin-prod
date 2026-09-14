@@ -5,10 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useInterval } from "@/lib/useInterval";
 import DataTable, { type ColumnDef } from "@/components/DataTable";
 import { ErrBanner } from "@/components/nft/Banner";
-import OtcTab from "@/components/nft/tabs/OtcTab";
-import BulkTab from "@/components/nft/tabs/BulkTab";
 import GiftsTab from "@/components/nft/tabs/GiftsTab";
-import AuctionsTab from "@/components/nft/tabs/AuctionsTab";
 import NftImage from "@/components/nft/NftImage";
 import WatchdogBanner from "@/components/nft/shared/WatchdogBanner";
 import TestnetResetConfirm from "./components/TestnetResetConfirm";
@@ -135,7 +132,7 @@ export default function NftPage() {
   const [ownerFilter, setOwnerFilter] = useState<string>(initialWallet);
   const ownerFilterRef = useRef<string>(initialWallet);
 
-  const [activeTab, setActiveTab] = useState<"nftlist" | "otc" | "bulk" | "gifts" | "auctions">("nftlist");
+  const [activeTab, setActiveTab] = useState<"nftlist" | "gifts">("nftlist");
 
   const [records, setRecords] = useState<NftRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -782,8 +779,8 @@ export default function NftPage() {
 
       <div className="ba-tabs" style={{ borderBottom: "1px solid #e5e7eb" }}>
         <div className="flex gap-1">
-          {(["nftlist"] as const).map(tab => {
-            const LABELS: Record<string, string> = { nftlist: "Records", otc: "OTC Deals", bulk: "Bulk Ops", gifts: "Gifts", events: "Events" };
+          {(["nftlist", "gifts"] as const).map(tab => {
+            const LABELS: Record<string, string> = { nftlist: "Records", gifts: "Gifts & Airdrop" };
             const label = LABELS[tab] ?? tab;
             const isActive = activeTab === tab;
             return (
@@ -1032,10 +1029,7 @@ export default function NftPage() {
         </>
       )}
 
-      {activeTab === "otc" && <OtcTab />}
-      {activeTab === "bulk" && <BulkTab />}
-      {activeTab === "gifts" && <GiftsTab />}
-      {activeTab === "auctions" && <AuctionsTab />}
+      {activeTab === "gifts" && <GiftsTab collectionId={collectionFilter} />}
 
       {viewRecord && (
         <NftHistoryModal

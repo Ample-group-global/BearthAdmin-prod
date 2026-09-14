@@ -44,7 +44,7 @@ function TypeBadge({ isAirdrop }: { isAirdrop: boolean }) {
   );
 }
 
-export default function GiftsTab() {
+export default function GiftsTab({ collectionId }: { collectionId: string }) {
   const [gifts, setGifts]               = useState<GiftOrder[]>([]);
   const [loading, setLoading]           = useState(true);
   const [transferring, setTransferring] = useState(false);
@@ -67,14 +67,16 @@ export default function GiftsTab() {
   const [airdropLoading, setAirdropLoading] = useState(false);
 
   async function load() {
+    if (!collectionId) return;
     setLoading(true);
     try {
-      const r = await fetch("/api/nft-sell/gifts", { credentials: "include" });
+      const r = await fetch(`/api/nft-sell/gifts?collection_id=${collectionId}`, { credentials: "include" });
       const d = await r.json();
       setGifts(d.gifts ?? []);
     } finally { setLoading(false); }
   }
-  useEffect(() => { load(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [collectionId]);
 
   async function createGift() {
     if (!createForm.recipient_wallet) return setErr("Recipient wallet is required.");
@@ -82,7 +84,7 @@ export default function GiftsTab() {
     if (createForm.sender_wallet && !ETH_ADDRESS_RE.test(createForm.sender_wallet)) return setErr("Sender wallet must be a valid Ethereum address (0x + 40 hex).");
     setSaving(true); setErr(null);
     try {
-      const body: Record<string, unknown> = { recipient_wallet: createForm.recipient_wallet, is_airdrop: createForm.is_airdrop };
+      const body: Record<string, unknown> = { recipient_wallet: createForm.recipient_wallet, is_airdrop: createForm.is_airdrop, collectionId };
       if (createForm.sender_wallet)   body.sender_wallet   = createForm.sender_wallet;
       if (createForm.recipient_name)  body.recipient_name  = createForm.recipient_name;
       if (createForm.recipient_email) body.recipient_email = createForm.recipient_email;
@@ -113,7 +115,7 @@ export default function GiftsTab() {
     if (invalid.length > 0) return setErr(`Invalid wallet address(es): ${invalid.slice(0, 3).join(", ")}${invalid.length > 3 ? ` (+${invalid.length - 3} more)` : ""}.`);
     setAirdropLoading(true); setErr(null);
     try {
-      const body: Record<string, unknown> = { recipient_wallets: wallets };
+      const body: Record<string, unknown> = { recipient_wallets: wallets, collectionId };
       if (airdropRarity && airdropRarity !== "any") body.rarity_tier  = airdropRarity;
       if (airdropMessage)                            body.gift_message = airdropMessage;
       const r = await fetch("/api/nft-sell/gifts/airdrop", {
@@ -134,7 +136,7 @@ export default function GiftsTab() {
     if (!confirm(`Mint 1 NFT and send to ${gift.recipient_wallet.slice(0, 10)}… on-chain?`)) return;
     setTransferring(true); setErr(null);
     try {
-      const r = await fetch(`/api/nft-sell/gifts/${id}/transfer`, { method: "POST", credentials: "include" });
+      const r = await fetch(`/api/nft-sell/gifts/${id}/transfer?collection_id=${collectionId}`, { method: "POST", credentials: "include" });
       const d = await r.json();
       if (!r.ok) return setErr(d.error ?? "Failed to transfer");
       setOk("Gift NFT transferred on-chain"); load();
@@ -144,7 +146,7 @@ export default function GiftsTab() {
   async function cancel(id: string) {
     if (!confirm("Cancel this gift order?")) return;
     try {
-      const r = await fetch(`/api/nft-sell/gifts/${id}`, { method: "DELETE", credentials: "include" });
+      const r = await fetch(`/api/nft-sell/gifts/${id}?collection_id=${collectionId}`, { method: "DELETE", credentials: "include" });
       const d = await r.json();
       if (!r.ok) { setErr(d.error ?? "Failed to cancel gift"); return; }
       setOk("Gift order cancelled"); load();

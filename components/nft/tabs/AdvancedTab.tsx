@@ -69,6 +69,34 @@ export default function AdvancedTab({ collectionId }: { collectionId: string }) 
 
   const [txEmergency, setTxEmergency] = useState(TX0);
 
+  const [airdropWallets, setAirdropWallets] = useState("");
+  const [airdropAmount, setAirdropAmount]   = useState("");
+  const [txAirdrop, setTxAirdrop]           = useState(TX0);
+  const airdropRecipients = airdropWallets.split(/[\n,]+/).map(w => w.trim()).filter(Boolean);
+
+  const handleEthAirdrop = async () => {
+    const invalid = airdropRecipients.filter(w => !ETH_ADDRESS_RE.test(w));
+    if (invalid.length > 0) { setTxAirdrop({ ...TX0, error: `Invalid address(es): ${invalid.slice(0, 3).join(", ")}` }); return; }
+    if (airdropRecipients.length === 0) { setTxAirdrop({ ...TX0, error: "At least one recipient wallet is required." }); return; }
+    if (!airdropAmount || Number(airdropAmount) <= 0) { setTxAirdrop({ ...TX0, error: "Amount per wallet must be a positive number." }); return; }
+
+    setTxAirdrop({ pending: true, hash: "", error: "", success: "" });
+    try {
+      const res = await fetch("/api/nft-sell/collection/airdrop-eth", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipients: airdropRecipients, amountEachEth: airdropAmount, collectionId }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setTxAirdrop({ ...TX0, error: d.error ?? "Airdrop failed" }); return; }
+      setTxAirdrop({ pending: false, hash: d.txHash ?? "", error: "", success: `Airdropped ${airdropAmount} ETH to ${d.recipientCount} wallet(s)` });
+      setAirdropWallets(""); setAirdropAmount("");
+    } catch (e: unknown) {
+      setTxAirdrop({ ...TX0, error: e instanceof Error ? e.message : "Network error" });
+    }
+  };
+
   const handleEmergencyTransfer = async () => {
     const tid = Number(emergencyTokenId);
     if (!tid || tid < 1) { setTxEmergency({ ...TX0, error: "Valid token ID required." }); return; }
@@ -151,6 +179,27 @@ export default function AdvancedTab({ collectionId }: { collectionId: string }) 
           {txEmergency.pending ? "Sending…" : "Execute Emergency Transfer"}
         </button>
         <TxStatus tx={txEmergency} onClear={() => setTxEmergency(TX0)} />
+      </Card>
+
+      <Card title="ETH Airdrop" note="Sends an equal ETH amount to each wallet from the collection's dedicated BearthAirdrop contract. Funded and signed by the operations wallet.">
+        <Inp label="Recipient Wallets (one per line or comma-separated)">
+          <textarea value={airdropWallets} onChange={e => setAirdropWallets(e.target.value)} rows={4}
+            placeholder="0x...&#10;0x..." className={inputCls} style={{ borderColor: "#e5e7eb" }} />
+        </Inp>
+        <p className="text-xs" style={{ color: airdropRecipients.length > 0 ? "#41afeb" : "#9bafc5" }}>
+          {airdropRecipients.length > 0 ? `${airdropRecipients.length} wallet${airdropRecipients.length !== 1 ? "s" : ""} detected` : "Paste wallet addresses above"}
+        </p>
+        <Inp label="Amount per Wallet (ETH)">
+          <input type="number" step="0.0001" min="0" value={airdropAmount} onChange={e => setAirdropAmount(e.target.value)}
+            placeholder="e.g. 0.01" className={inputCls} style={{ borderColor: "#e5e7eb" }} />
+        </Inp>
+        <button
+          onClick={handleEthAirdrop}
+          disabled={txAirdrop.pending || airdropRecipients.length === 0 || !airdropAmount}
+          className={btnCls(false, txAirdrop.pending)}>
+          {txAirdrop.pending ? "Sending…" : `Airdrop to ${airdropRecipients.length} Wallet${airdropRecipients.length !== 1 ? "s" : ""}`}
+        </button>
+        <TxStatus tx={txAirdrop} onClear={() => setTxAirdrop(TX0)} />
       </Card>
 
       <Card
