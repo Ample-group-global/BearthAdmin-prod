@@ -29,7 +29,7 @@ interface WalletMembership {
 
 const RARITY_OPTIONS = ["", "legendary", "epic", "rare", "common"];
 
-export default function MembershipTab({ collectionId: _collectionId }: { collectionId: string }) {
+export default function MembershipTab({ collectionId }: { collectionId: string }) {
   const [tiers, setTiers]     = useState<MembershipTier[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -47,14 +47,15 @@ export default function MembershipTab({ collectionId: _collectionId }: { collect
   const [form, setForm] = useState(emptyForm);
 
   async function load() {
+    if (!collectionId) return;
     setLoading(true);
     try {
-      const r = await fetch("/api/nft-sell/membership", { credentials: "include" });
+      const r = await fetch(`/api/nft-sell/membership?collection_id=${collectionId}`, { credentials: "include" });
       const d = await r.json();
       setTiers(d.tiers ?? []);
     } finally { setLoading(false); }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [collectionId]);
 
   function openCreate() {
     setForm(emptyForm); setEditing(null); setErr(null); setShowCreate(true);
@@ -76,6 +77,7 @@ export default function MembershipTab({ collectionId: _collectionId }: { collect
     setSaving(true); setErr(null);
     try {
       const body: Record<string, unknown> = {
+        collectionId,
         name: form.name,
         tier_level: parseInt(form.tier_level),
         min_tokens_held: parseInt(form.min_tokens_held),
@@ -88,7 +90,7 @@ export default function MembershipTab({ collectionId: _collectionId }: { collect
         try { body.benefits = JSON.parse(form.benefits); } catch { body.benefits = [form.benefits]; }
       }
 
-      const url  = editing ? `/api/nft-sell/membership/${editing.id}` : "/api/nft-sell/membership";
+      const url  = editing ? `/api/nft-sell/membership/${editing.id}?collection_id=${collectionId}` : "/api/nft-sell/membership";
       const meth = editing ? "PUT" : "POST";
       const r    = await fetch(url, { method: meth, credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d    = await r.json();
@@ -100,14 +102,14 @@ export default function MembershipTab({ collectionId: _collectionId }: { collect
 
   async function deactivate(id: string) {
     if (!confirm("Deactivate this tier?")) return;
-    await fetch(`/api/nft-sell/membership/${id}`, { method: "DELETE", credentials: "include" });
+    await fetch(`/api/nft-sell/membership/${id}?collection_id=${collectionId}`, { method: "DELETE", credentials: "include" });
     load();
   }
 
   async function verify() {
     setVerifying(true); setVerifyResult(null); setVerifyErr(null);
     try {
-      const r = await fetch(`/api/nft-sell/membership/verify?wallet=${encodeURIComponent(verifyWallet)}`, { credentials: "include" });
+      const r = await fetch(`/api/nft-sell/membership/verify?wallet=${encodeURIComponent(verifyWallet)}&collection_id=${collectionId}`, { credentials: "include" });
       const d = await r.json();
       if (!r.ok) return setVerifyErr(d.error ?? "Verification failed");
       setVerifyResult(d.membership);
