@@ -434,7 +434,7 @@ export default function DashboardPage() {
                         <tr key={w.waveNumber} style={{ borderTop: i === 0 ? "none" : "1px solid #f3f4f6" }} className="hover:bg-gray-50/50">
                           <td style={{ padding: "12px 16px" }}>
                             <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/waves")}
-                              className="font-semibold hover:underline" style={{ color: "#24315f" }}>
+                              className="font-semibold" style={{ color: "#24315f" }}>
                               W{w.waveNumber} — {w.name}
                             </button>
                           </td>
@@ -447,14 +447,14 @@ export default function DashboardPage() {
                           <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151" }}>{w.priceEth || "Free"}</td>
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
                             <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
-                              className="hover:underline" style={{ color: "#41afeb" }}>
+                              style={{ color: "#41afeb" }}>
                               {w.quantity.toLocaleString()}
                             </button>
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
                             {w.soldCount > 0 ? (
                               <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
-                                className="font-semibold hover:underline" style={{ color: "#41afeb" }}>
+                                className="font-semibold" style={{ color: "#41afeb" }}>
                                 {w.soldCount.toLocaleString()}
                               </button>
                             ) : (
@@ -464,7 +464,7 @@ export default function DashboardPage() {
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
                             {w.treasuryQty > 0 ? (
                               <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
-                                className="hover:underline" style={{ color: "#9bafc5" }}>
+                                style={{ color: "#9bafc5" }}>
                                 {w.treasuryQty.toLocaleString()}
                               </button>
                             ) : (
@@ -543,7 +543,7 @@ export default function DashboardPage() {
                           <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600 }}>
                             {w.mintedCount > 0 ? (
                               <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wallet: w.address })}
-                                className="hover:underline" style={{ color: "#41afeb" }}>
+                                style={{ color: "#41afeb" }}>
                                 {w.mintedCount}
                               </button>
                             ) : (
