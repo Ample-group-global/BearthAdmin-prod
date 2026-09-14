@@ -34,6 +34,7 @@ export default function WhitelistTab({ collectionId, initialCheckAddress }: { co
     customer: { userCode: string | null; name: string | null } | null;
   } | null>(null);
   const [quickAdding, setQuickAdding] = useState(false);
+  const [copiedRoot, setCopiedRoot] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const PER_PAGE = 20;
@@ -158,17 +159,41 @@ export default function WhitelistTab({ collectionId, initialCheckAddress }: { co
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-bold" style={{ color: "#24315f" }}>Whitelist Management</h2>
-          <p className="text-sm mt-0.5" style={{ color: "#9bafc5" }}>
-            {addresses.length.toLocaleString()} address{addresses.length !== 1 ? "es" : ""} ·{" "}
-            {stats?.merkleRoot ? `Root: ${stats.merkleRoot.slice(0, 12)}...` : "No root set"}
-            {stats?.lastUpdated && ` · updated ${new Date(stats.lastUpdated).toLocaleDateString()}`}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-1.5">
+            <span className="text-sm" style={{ color: "#6b7280" }}>
+              {addresses.length.toLocaleString()} address{addresses.length !== 1 ? "es" : ""}
+            </span>
+            {stats?.merkleRoot ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                style={{ background: "#f3f4f6", border: "1px solid #e5e7eb" }}>
+                <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "#9bafc5" }}>Root</span>
+                <span className="font-mono text-xs" style={{ color: "#24315f" }} title={stats.merkleRoot}>
+                  {stats.merkleRoot.slice(0, 10)}…{stats.merkleRoot.slice(-6)}
+                </span>
+                <button
+                  onClick={() => { navigator.clipboard?.writeText(stats.merkleRoot); setCopiedRoot(true); setTimeout(() => setCopiedRoot(false), 2000); }}
+                  style={{ color: copiedRoot ? "#16a34a" : "#9bafc5" }}
+                  title={copiedRoot ? "Copied!" : "Copy full root"}>
+                  {copiedRoot ? (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                  )}
+                </button>
+              </span>
+            ) : (
+              <span className="text-sm" style={{ color: "#9bafc5" }}>No root set</span>
+            )}
+            {stats?.lastUpdated && (
+              <span className="text-xs" style={{ color: "#9bafc5" }}>Updated {new Date(stats.lastUpdated).toLocaleDateString()}</span>
+            )}
             {stats?.manualOverride && (
-              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                 style={{ background: "rgba(217,119,6,0.1)", color: "#d97706" }}>
                 Manual Override
               </span>
             )}
-          </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {stats?.manualOverride && (
