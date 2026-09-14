@@ -475,6 +475,30 @@ export default function DashboardPage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f8fafc" }}>
+                        <td style={{ padding: "12px 16px", fontWeight: 700, color: "#24315f" }}>Total</td>
+                        <td />
+                        <td />
+                        <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: "#24315f" }}>
+                          {data.waves.reduce((s, w) => s + w.quantity, 0).toLocaleString()}
+                        </td>
+                        <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: "#24315f" }}>
+                          {data.waves.reduce((s, w) => s + w.soldCount, 0).toLocaleString()}
+                          {data.syncCheck.checked && data.syncCheck.totalOnChain !== null && (
+                            <span className="ml-1.5 font-semibold" style={{ fontSize: 10, color: data.syncCheck.inSync ? "#16a34a" : "#d97706" }}>
+                              (on-chain {data.syncCheck.totalOnChain})
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: "#24315f" }}>
+                          {data.waves.reduce((s, w) => s + w.treasuryQty, 0).toLocaleString()}
+                        </td>
+                        <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: "#24315f" }}>
+                          {data.waves.reduce((s, w) => s + w.revenueEth, 0).toFixed(4)}
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
@@ -558,6 +582,19 @@ export default function DashboardPage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f8fafc" }}>
+                        <td style={{ padding: "12px 16px", fontWeight: 700, color: "#24315f" }}>Total</td>
+                        <td />
+                        <td />
+                        <td />
+                        <td />
+                        <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: "#24315f" }}>
+                          {data.wallets.reduce((s, w) => s + w.mintedCount, 0).toLocaleString()}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
