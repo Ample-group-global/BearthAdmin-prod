@@ -10,7 +10,6 @@ import NftImage from "@/components/nft/NftImage";
 import WatchdogBanner from "@/components/nft/shared/WatchdogBanner";
 import TestnetResetConfirm from "./components/TestnetResetConfirm";
 import WaveRevealPanel from "./components/WaveRevealPanel";
-import NftFiltersRow from "./components/NftFiltersRow";
 import NftHistoryModal from "./components/NftHistoryModal";
 import { fmtDatetime as fmt, TIER_COLORS } from "@/lib/nft-utils";
 
@@ -155,7 +154,6 @@ export default function NftPage() {
   const [mintedCount, setMintedCount] = useState(0);
   const [soldCount, setSoldCount] = useState(0);
   const [deliveredCount, setDeliveredCount] = useState(0);
-  const [customerWalletCount, setCustomerWalletCount] = useState(0);
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -246,7 +244,6 @@ export default function NftPage() {
         setMintedCount(data.mintedCount ?? 0);
         setSoldCount(data.soldCount ?? 0);
         setDeliveredCount(data.deliveredCount ?? 0);
-        setCustomerWalletCount(data.customerWalletCount ?? 0);
         setLoading(false);
         console.log("records loaded:", data.nftRecords?.length ?? 0);
         console.groupEnd();
