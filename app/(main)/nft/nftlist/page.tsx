@@ -133,12 +133,10 @@ export default function NftPage() {
 
   // Lets other pages (e.g. Dashboard's clickable KPI numbers) deep-link
   // straight into a pre-filtered view instead of dumping the visitor on an
-  // unfiltered list they then have to filter by hand. Which collection
-  // comes from the shared session cookie (set right before navigating here)
-  // rather than a URL param, so a collection UUID never appears in the
-  // address bar.
-  const rawWave = searchParams.get("wave") ?? "";
-  const initialWave = /^[1-7]$/.test(rawWave) ? rawWave : "";
+  // unfiltered list they then have to filter by hand. Wave + status arrive
+  // via a short-lived hidden cookie (see the effect below) rather than a
+  // ?wave= URL param, so neither the wave number nor which status bucket
+  // (customer_held vs treasury_wallet) is ever visible in the address bar.
 
   const [activeTab, setActiveTab] = useState<"nftlist" | "gifts">("nftlist");
 
@@ -162,7 +160,7 @@ export default function NftPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [revealFilter, setRevealFilter] = useState("");
-  const [waveFilter, setWaveFilter] = useState(initialWave);
+  const [waveFilter, setWaveFilter] = useState("");
   const [mintTypeFilter, setMintTypeFilter] = useState("");
   const [rarityTierFilter, setRarityTierFilter] = useState("");
   const [collectionFilter, setCollectionFilter] = useState("");
@@ -307,6 +305,22 @@ export default function NftPage() {
     fetch("/api/session/collection", { credentials: "include" })
       .then(r => r.json())
       .then(d => { if (d.collectionId) setCollectionFilter(d.collectionId); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    // One-shot deep-link hint (wave + status) from Dashboard's clickable
+    // wave numbers/chart -- consumed and cleared immediately so revisiting
+    // this page later doesn't silently reapply a stale filter.
+    fetch("/api/session/nftlist-filter", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => {
+        if (d.wave && /^[1-7]$/.test(d.wave)) setWaveFilter(d.wave);
+        if (d.status) setRevealFilter(d.status);
+        if (d.wave || d.status) {
+          fetch("/api/session/nftlist-filter", { method: "DELETE", credentials: "include" }).catch(() => {});
+        }
+      })
       .catch(() => {});
   }, []);
 
