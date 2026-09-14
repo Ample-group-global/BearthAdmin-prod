@@ -2,6 +2,28 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+// Other pages resolve "which collection" from a session cookie rather than
+// a URL param -- keeps collection UUIDs out of the address bar. The Waves
+// page reads its own short-lived hand-off cookie (nft_waves_collection_id);
+// everywhere else reads the general, longer-lived one.
+async function goToCollectionPage(
+  router: ReturnType<typeof useRouter>,
+  collectionId: string,
+  collectionName: string,
+  path: string,
+  params: Record<string, string> = {},
+) {
+  const sessionEndpoint = path === "/nft/waves" ? "/api/session/waves-collection" : "/api/session/collection";
+  await fetch(sessionEndpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ collectionId, name: collectionName }),
+  }).catch(() => {});
+  const qs = new URLSearchParams(params).toString();
+  router.push(qs ? `${path}?${qs}` : path);
+}
 
 interface WaveRow {
   waveNumber: number;
@@ -17,6 +39,8 @@ interface WaveBreakdown { waveNumber: number; waveName: string; priceEth: number
 interface WalletRow {
   customerName: string;
   address: string;
+  userCode: string | null;
+  referrerName: string | null;
   whitelisted: boolean;
   mintedCount: number;
   perWave: WaveBreakdown[];
@@ -90,15 +114,16 @@ function csvCell(v: string | number): string {
 }
 
 function downloadWalletsCsv(collectionName: string, wallets: WalletRow[]) {
-  const headers = ["Collection", "Customer Name", "Wallet Address", "Whitelisted", "Wave Number", "Wave Name", "Price (ETH)", "Quantity", "Spent (ETH)"];
+  const headers = ["Collection", "Customer Code", "Customer Name", "Referrer", "Wallet Address", "Whitelisted", "Wave Number", "Wave Name", "Price (ETH)", "Quantity", "Spent (ETH)"];
   const rows: string[][] = [];
   for (const w of wallets) {
+    const base = [collectionName, w.userCode ?? "", w.customerName, w.referrerName ?? "", w.address, w.whitelisted ? "Yes" : "No"];
     if (w.perWave.length === 0) {
-      rows.push([collectionName, w.customerName, w.address, w.whitelisted ? "Yes" : "No", "", "", "", "0", "0"]);
+      rows.push([...base, "", "", "", "0", "0"]);
     } else {
       for (const pw of w.perWave) {
         rows.push([
-          collectionName, w.customerName, w.address, w.whitelisted ? "Yes" : "No",
+          ...base,
           String(pw.waveNumber), pw.waveName, pw.priceEth.toFixed(4), String(pw.qty), pw.spentEth.toFixed(4),
         ]);
       }
@@ -114,18 +139,23 @@ function downloadWalletsCsv(collectionName: string, wallets: WalletRow[]) {
   URL.revokeObjectURL(url);
 }
 
-function KpiCard({ label, value, sub, color = "#24315f" }: {
-  label: string; value: string | number; sub?: string; color?: string;
+function KpiCard({ label, value, sub, color = "#24315f", onClick }: {
+  label: string; value: string | number; sub?: string; color?: string; onClick?: () => void;
 }) {
-  return (
-    <div className="bg-white rounded-xl shadow-sm" style={{ border: "1px solid #e5e7eb", borderLeft: `3px solid ${color}`, padding: "14px 16px" }}>
+  const body = (
+    <>
       <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: "#9bafc5" }}>{label}</p>
       <p className="font-extrabold leading-none text-2xl" style={{ color }}>
         {typeof value === "number" ? value.toLocaleString() : value}
       </p>
       {sub && <p className="text-xs mt-1.5" style={{ color: "#9bafc5" }}>{sub}</p>}
-    </div>
+    </>
   );
+  const cls = "bg-white rounded-xl shadow-sm block w-full text-left" + (onClick ? " transition-shadow hover:shadow-md cursor-pointer" : "");
+  const style = { border: "1px solid #e5e7eb", borderLeft: `3px solid ${color}`, padding: "14px 16px" };
+  return onClick
+    ? <button onClick={onClick} className={cls} style={style}>{body}</button>
+    : <div className={cls} style={style}>{body}</div>;
 }
 
 function SectionDivider({ label }: { label: string }) {
@@ -137,31 +167,67 @@ function SectionDivider({ label }: { label: string }) {
   );
 }
 
-function WaveBarChart({ waves }: { waves: WaveRow[] }) {
+function WaveBarChart({ waves, collectionId, collectionName }: { waves: WaveRow[]; collectionId: string; collectionName: string }) {
+  const router = useRouter();
+  const [hovered, setHovered] = useState<number | null>(null);
   const max = Math.max(1, ...waves.map(w => w.soldCount));
   const barW = 44, gap = 20, chartH = 160, leftPad = 8;
   const width = waves.length * (barW + gap) + leftPad;
+  const active = hovered !== null ? waves.find(w => w.waveNumber === hovered) ?? null : null;
+  const pctSold = (w: WaveRow) => w.quantity > 0 ? Math.round((w.soldCount / w.quantity) * 100) : 0;
+
   return (
-    <div className="overflow-x-auto">
-      <svg width={width} height={chartH + 40} role="img" aria-label="NFTs sold per wave">
-        {waves.map((w, i) => {
-          const h = Math.round((w.soldCount / max) * chartH);
-          const x = leftPad + i * (barW + gap);
-          return (
-            <g key={w.waveNumber}>
-              <rect x={x} y={chartH - h} width={barW} height={Math.max(h, w.soldCount > 0 ? 2 : 0)}
-                rx={4} fill="#7c3aed" opacity={w.soldCount > 0 ? 0.85 : 0.15} />
-              {!h && <rect x={x} y={chartH - 2} width={barW} height={2} rx={1} fill="#e5e7eb" />}
-              <text x={x + barW / 2} y={chartH - h - 6} textAnchor="middle" fontSize="11" fontWeight="700" fill="#24315f">
-                {w.soldCount}
-              </text>
-              <text x={x + barW / 2} y={chartH + 18} textAnchor="middle" fontSize="10" fontWeight="700" fill="#9bafc5">
-                W{w.waveNumber}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+    <div>
+      <div className="flex items-center justify-between mb-2 h-9">
+        {active ? (
+          <div className="flex items-center gap-3 text-xs">
+            <span className="font-bold" style={{ color: "#24315f" }}>W{active.waveNumber} — {active.name}</span>
+            <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(124,58,237,0.1)", color: "#7c3aed" }}>
+              {active.soldCount.toLocaleString()} / {active.quantity.toLocaleString()} sold ({pctSold(active)}%)
+            </span>
+            <span style={{ color: "#9bafc5" }}>{active.priceEth ? `${active.priceEth} ETH each` : "Free mint"}</span>
+            <span style={{ color: "#9bafc5" }}>· Revenue {active.revenueEth.toFixed(4)} ETH</span>
+            <span className="font-semibold" style={{ color: "#41afeb" }}>Click to view these NFTs →</span>
+          </div>
+        ) : (
+          <span className="text-xs" style={{ color: "#9bafc5" }}>Hover a bar for details · click to view that wave&apos;s NFTs</span>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <svg width={width} height={chartH + 40} role="img" aria-label="NFTs sold per wave">
+          {waves.map((w, i) => {
+            const h = Math.round((w.soldCount / max) * chartH);
+            const x = leftPad + i * (barW + gap);
+            const isHovered = hovered === w.waveNumber;
+            return (
+              <g key={w.waveNumber}
+                className="cursor-pointer"
+                onMouseEnter={() => setHovered(w.waveNumber)}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
+              >
+                <rect x={x - 4} y={0} width={barW + 8} height={chartH + 24} fill="transparent" />
+                <rect x={x} y={chartH - h} width={barW} height={Math.max(h, w.soldCount > 0 ? 2 : 0)}
+                  rx={4} fill="#7c3aed" opacity={w.soldCount > 0 ? (isHovered ? 1 : 0.85) : (isHovered ? 0.35 : 0.15)}
+                  style={{ transition: "opacity 120ms ease" }} />
+                {isHovered && (
+                  <rect x={x} y={chartH - h} width={barW} height={Math.max(h, w.soldCount > 0 ? 2 : 0)}
+                    rx={4} fill="none" stroke="#7c3aed" strokeWidth={2} />
+                )}
+                {!h && <rect x={x} y={chartH - 2} width={barW} height={2} rx={1} fill="#e5e7eb" />}
+                <text x={x + barW / 2} y={chartH - h - 6} textAnchor="middle" fontSize="11" fontWeight="700"
+                  fill={isHovered ? "#7c3aed" : "#24315f"}>
+                  {w.soldCount}
+                </text>
+                <text x={x + barW / 2} y={chartH + 18} textAnchor="middle" fontSize="10" fontWeight="700"
+                  fill={isHovered ? "#7c3aed" : "#9bafc5"}>
+                  W{w.waveNumber}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
     </div>
   );
 }
@@ -179,6 +245,8 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [collections, setCollections] = useState<CollectionOption[]>([]);
   const [collectionId, setCollectionId] = useState("");
+  const router = useRouter();
+  const collectionName = collections.find(c => c.id === collectionId)?.name ?? "";
 
   const [cards, setCards] = useState<MenuItem[] | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -312,9 +380,13 @@ export default function DashboardPage() {
           <div>
             <SectionDivider label="Summary" />
             <div className="grid grid-cols-3 gap-4">
-              <KpiCard label="Total Sold" value={data.totalSold} color="#7c3aed" />
+              <KpiCard label="Total Sold" value={data.totalSold} color="#7c3aed"
+                onClick={data.totalSold > 0 ? () => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist") : undefined}
+                sub={data.totalSold > 0 ? "view NFTs →" : undefined} />
               <KpiCard label="Revenue (ETH)" value={data.totalRevenueEth} color="#41afeb" />
-              <KpiCard label="Holders" value={data.holders} color="#24315f" sub="wallets holding an NFT here" />
+              <KpiCard label="Holders" value={data.holders} color="#24315f"
+                onClick={data.holders > 0 ? () => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist") : undefined}
+                sub={data.holders > 0 ? "view holding wallets →" : "wallets holding an NFT here"} />
             </div>
           </div>
 
@@ -323,7 +395,7 @@ export default function DashboardPage() {
             {data.waves.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm p-5 mb-4" style={{ border: "1px solid #e5e7eb" }}>
                 <p className="text-[11px] font-bold uppercase tracking-widest mb-3" style={{ color: "#9bafc5" }}>NFTs Sold per Wave</p>
-                <WaveBarChart waves={data.waves} />
+                <WaveBarChart waves={data.waves} collectionId={collectionId} collectionName={collectionName} />
               </div>
             )}
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: "1px solid #e5e7eb" }}>
@@ -346,9 +418,10 @@ export default function DashboardPage() {
                       {data.waves.map((w, i) => (
                         <tr key={w.waveNumber} style={{ borderTop: i === 0 ? "none" : "1px solid #f3f4f6" }} className="hover:bg-gray-50/50">
                           <td style={{ padding: "12px 16px" }}>
-                            <Link href={`/nft/waves?collection_id=${collectionId}`} className="font-semibold" style={{ color: "#24315f" }}>
+                            <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/waves")}
+                              className="font-semibold hover:underline" style={{ color: "#24315f" }}>
                               W{w.waveNumber} — {w.name}
-                            </Link>
+                            </button>
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
                             <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
@@ -358,7 +431,16 @@ export default function DashboardPage() {
                           </td>
                           <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151" }}>{w.priceEth || "Free"}</td>
                           <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151" }}>{w.quantity.toLocaleString()}</td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151" }}>{w.soldCount.toLocaleString()}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                            {w.soldCount > 0 ? (
+                              <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wave: String(w.waveNumber) })}
+                                className="font-semibold hover:underline" style={{ color: "#41afeb" }}>
+                                {w.soldCount.toLocaleString()}
+                              </button>
+                            ) : (
+                              <span style={{ color: "#374151" }}>{w.soldCount.toLocaleString()}</span>
+                            )}
+                          </td>
                           <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151" }}>{w.revenueEth.toFixed(4)}</td>
                         </tr>
                       ))}
@@ -391,8 +473,8 @@ export default function DashboardPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
-                        {["Customer", "Wallet", "Whitelisted", "Minted Here", "Wave Breakdown"].map((h, i) => (
-                          <th key={h} className={i >= 2 && i <= 3 ? "text-right" : "text-left"}
+                        {["Code", "Customer", "Referrer", "Wallet", "Whitelisted", "Minted Here", "Wave Breakdown"].map((h, i) => (
+                          <th key={h} className={i >= 4 && i <= 5 ? "text-right" : "text-left"}
                             style={{ padding: "10px 16px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#9bafc5" }}>
                             {h}
                           </th>
@@ -402,7 +484,9 @@ export default function DashboardPage() {
                     <tbody>
                       {data.wallets.map((w, i) => (
                         <tr key={w.address} style={{ borderTop: i === 0 ? "none" : "1px solid #f3f4f6" }} className="hover:bg-gray-50/50">
+                          <td style={{ padding: "12px 16px", fontSize: 12, color: "#6b7280" }}>{w.userCode ?? "—"}</td>
                           <td style={{ padding: "12px 16px", fontWeight: 600, color: "#24315f" }}>{w.customerName}</td>
+                          <td style={{ padding: "12px 16px", fontSize: 12, color: "#6b7280" }}>{w.referrerName ?? "—"}</td>
                           <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, color: "#6b7280" }}>
                             {w.address.slice(0, 8)}…{w.address.slice(-6)}
                           </td>
@@ -412,7 +496,16 @@ export default function DashboardPage() {
                               {w.whitelisted ? "Yes" : "No"}
                             </span>
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#374151", fontWeight: 600 }}>{w.mintedCount}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600 }}>
+                            {w.mintedCount > 0 ? (
+                              <button onClick={() => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist", { wallet: w.address })}
+                                className="hover:underline" style={{ color: "#41afeb" }}>
+                                {w.mintedCount}
+                              </button>
+                            ) : (
+                              <span style={{ color: "#374151" }}>{w.mintedCount}</span>
+                            )}
+                          </td>
                           <td style={{ padding: "12px 16px", color: "#6b7280", fontSize: 12 }}>
                             {w.perWave.length === 0 ? "—" : w.perWave.map(pw =>
                               `W${pw.waveNumber} ×${pw.qty} @ ${pw.priceEth || "Free"}${pw.priceEth ? " ETH" : ""}`

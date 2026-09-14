@@ -132,6 +132,15 @@ export default function NftPage() {
   const [ownerFilter, setOwnerFilter] = useState<string>(initialWallet);
   const ownerFilterRef = useRef<string>(initialWallet);
 
+  // Lets other pages (e.g. Dashboard's clickable KPI numbers) deep-link
+  // straight into a pre-filtered view instead of dumping the visitor on an
+  // unfiltered list they then have to filter by hand. Which collection
+  // comes from the shared session cookie (set right before navigating here)
+  // rather than a URL param, so a collection UUID never appears in the
+  // address bar.
+  const rawWave = searchParams.get("wave") ?? "";
+  const initialWave = /^[1-7]$/.test(rawWave) ? rawWave : "";
+
   const [activeTab, setActiveTab] = useState<"nftlist" | "gifts">("nftlist");
 
   const [records, setRecords] = useState<NftRecord[]>([]);
@@ -152,7 +161,7 @@ export default function NftPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [revealFilter, setRevealFilter] = useState("");
-  const [waveFilter, setWaveFilter] = useState("");
+  const [waveFilter, setWaveFilter] = useState(initialWave);
   const [mintTypeFilter, setMintTypeFilter] = useState("");
   const [rarityTierFilter, setRarityTierFilter] = useState("");
   const [collectionFilter, setCollectionFilter] = useState("");
@@ -266,6 +275,19 @@ export default function NftPage() {
       setResetting(false); setShowResetConfirm(false);
     }
   }, [loadRecords, collectionFilter]);
+
+  useEffect(() => {
+    // A deep link from another page (e.g. Dashboard's clickable KPIs) sets
+    // this cookie right before navigating here, so the collection UUID
+    // never has to appear in the URL. Unlike the Waves page's short-lived
+    // one-time hand-off cookie, this one is the app-wide "last selected
+    // collection" (30-day TTL) -- read it, but don't consume it, since
+    // other pages/future visits rely on it persisting.
+    fetch("/api/session/collection", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => { if (d.collectionId) setCollectionFilter(d.collectionId); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch("/api/master", { credentials: "include" })
