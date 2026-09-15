@@ -444,14 +444,17 @@ export default function DashboardPage() {
 
           <div>
             <SectionDivider label="Summary" />
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <KpiCard label="Total Sold" value={data.totalSold} color="#7c3aed"
-                onClick={data.totalSold > 0 ? () => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist") : undefined}
+                onClick={data.totalSold > 0 ? () => goToNftList(router, collectionId, collectionName, { status: "customer_held" }) : undefined}
                 sub={data.totalSold > 0 ? "view NFTs →" : undefined} />
               <KpiCard label="Revenue (ETH)" value={data.totalRevenueEth} color="#41afeb" />
               <KpiCard label="Holders" value={data.holders} color="#24315f"
-                onClick={data.holders > 0 ? () => goToCollectionPage(router, collectionId, collectionName, "/nft/nftlist") : undefined}
+                onClick={data.holders > 0 ? () => goToNftList(router, collectionId, collectionName, { status: "customer_held" }) : undefined}
                 sub={data.holders > 0 ? "view holding wallets →" : "wallets holding an NFT here"} />
+              <KpiCard label="Treasury Wallet" value={data.waves.reduce((s, w) => s + w.treasuryQty, 0)} color="#0e7490"
+                onClick={data.waves.some(w => w.treasuryQty > 0) ? () => goToNftList(router, collectionId, collectionName, { status: "treasury_wallet" }) : undefined}
+                sub={data.waves.some(w => w.treasuryQty > 0) ? "view NFTs →" : "unsold, swept to treasury"} />
             </div>
           </div>
 
