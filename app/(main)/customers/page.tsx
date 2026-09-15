@@ -44,6 +44,7 @@ const ROLE_LABELS: Record<string, string> = {
 const PAGE_SIZE = 20;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^[+\d\s\-().]{6,20}$/;
+const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -62,6 +63,7 @@ export default function CustomersPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState({ firstName: "", lastName: "", phone: "", email: "", lineId: "", notes: "" });
+  const [newCustomerWallet, setNewCustomerWallet] = useState("");
   const [referrerId, setReferrerId] = useState<string | null>(null);
   const [referrerLabel, setReferrerLabel] = useState("");
   const [referrerQuery, setReferrerQuery] = useState("");
@@ -69,6 +71,10 @@ export default function CustomersPage() {
   const [referrerDropdownOpen, setReferrerDropdownOpen] = useState(false);
   const [referrerLoading, setReferrerLoading] = useState(false);
   const referrerSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showAddReferrer, setShowAddReferrer] = useState(false);
+  const [newReferrer, setNewReferrer] = useState({ firstName: "", lastName: "", phone: "", email: "" });
+  const [addingReferrer, setAddingReferrer] = useState(false);
+  const [addReferrerError, setAddReferrerError] = useState<string | null>(null);
 
   const [walletCustomer, setWalletCustomer] = useState<Customer | null>(null);
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -133,6 +139,31 @@ export default function CustomersPage() {
     setReferrerLabel(r ? `${r.name} (${ROLE_LABELS[r.roleCode] ?? r.roleCode})` : "");
     setReferrerQuery("");
     setReferrerDropdownOpen(false);
+    setShowAddReferrer(false);
+    setAddReferrerError(null);
+    setNewReferrer({ firstName: "", lastName: "", phone: "", email: "" });
+  };
+
+  const handleCreateReferrer = async () => {
+    if (!newReferrer.firstName.trim()) { setAddReferrerError("First name is required."); return; }
+    setAddingReferrer(true);
+    setAddReferrerError(null);
+    try {
+      const res = await fetch("/api/referrers", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: newReferrer.firstName.trim(),
+          lastName: newReferrer.lastName.trim() || undefined,
+          phone: newReferrer.phone.trim() || undefined,
+          email: newReferrer.email.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setAddReferrerError(data.error ?? "Failed to create referrer."); return; }
+      const created: Referrer = { ...data.referrer, roleCode: "ext_referrer" };
+      selectReferrer(created);
+    } catch { setAddReferrerError("Network error."); }
+    finally { setAddingReferrer(false); }
   };
 
   const hasContact = () => !!(form.phone.trim() || form.email.trim() || form.lineId.trim());
@@ -143,12 +174,14 @@ export default function CustomersPage() {
     if (!hasContact()) return "At least one contact method is required: Phone, Email, or LINE ID.";
     if (form.phone.trim() && !PHONE_RE.test(form.phone.trim())) return "Phone number is not valid.";
     if (form.email.trim() && !EMAIL_RE.test(form.email.trim())) return "Email address is not valid.";
+    if (!editCustomer && newCustomerWallet.trim() && !ETH_ADDRESS_RE.test(newCustomerWallet.trim())) return "Wallet address is not valid (expected 0x + 40 hex characters).";
     return null;
   };
 
   const openCreate = () => {
     setEditCustomer(null);
     setForm({ firstName: "", lastName: "", phone: "", email: "", lineId: "", notes: "" });
+    setNewCustomerWallet("");
     selectReferrer(null);
     setFormError(null);
     setShowModal(true);
@@ -157,10 +190,14 @@ export default function CustomersPage() {
   const openEdit = (c: Customer) => {
     setEditCustomer(c);
     setForm({ firstName: c.firstName ?? "", lastName: c.lastName ?? "", phone: c.phone ?? "", email: c.email ?? "", lineId: c.lineId ?? "", notes: c.notes ?? "" });
+    setNewCustomerWallet("");
     setReferrerId(c.referrerId ?? null);
     setReferrerLabel(c.referrerId && c.referrerName ? c.referrerName : "");
     setReferrerQuery("");
     setReferrerDropdownOpen(false);
+    setShowAddReferrer(false);
+    setAddReferrerError(null);
+    setNewReferrer({ firstName: "", lastName: "", phone: "", email: "" });
     setFormError(null);
     setShowModal(true);
   };
@@ -183,7 +220,22 @@ export default function CustomersPage() {
       const url = editCustomer ? `/api/customers/${editCustomer.id}` : "/api/customers";
       const method = editCustomer ? "PUT" : "POST";
       const res = await fetch(url, { method, credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!res.ok) { const d = await res.json(); setFormError(d.error ?? "Save failed."); return; }
+      const data = await res.json();
+      if (!res.ok) { setFormError(data.error ?? "Save failed."); return; }
+
+      const walletAddr = newCustomerWallet.trim();
+      const newId = data.customer?.id;
+      if (!editCustomer && walletAddr && newId) {
+        const wRes = await fetch(`/api/customers/${newId}/wallets`, {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: walletAddr }),
+        });
+        if (!wRes.ok) {
+          const wData = await wRes.json().catch(() => ({}));
+          setError(`Customer created, but wallet could not be linked: ${wData.error ?? "unknown error"}. Add it from the Wallets column.`);
+        }
+      }
+
       setShowModal(false);
       loadCustomers(search, offset);
     } catch { setFormError("Network error."); }
@@ -537,6 +589,20 @@ export default function CustomersPage() {
               </div>
               <p className="text-xs" style={{ color: "#9bafc5" }}>At least one of Phone, Email, or LINE ID is required.</p>
 
+              {!editCustomer && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1" style={{ color: "#24315f" }}>Wallet Address (optional)</label>
+                  <input
+                    value={newCustomerWallet}
+                    onChange={(e) => setNewCustomerWallet(e.target.value)}
+                    placeholder="0x… wallet address"
+                    className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono"
+                    style={{ border: "1px solid #e5e7eb", color: "#111827" }}
+                  />
+                  <p className="text-xs mt-1" style={{ color: "#9bafc5" }}>For manual onboarding — links this wallet to the new customer immediately.</p>
+                </div>
+              )}
+
               <div className="relative">
                 <label className="block text-xs font-semibold mb-1" style={{ color: "#24315f" }}>Referred By</label>
                 {referrerId ? (
@@ -574,11 +640,66 @@ export default function CustomersPage() {
                             </button>
                           ))
                         )}
+                        <button
+                          type="button"
+                          onClick={() => { setShowAddReferrer(true); setReferrerDropdownOpen(false); setReferrerQuery(""); }}
+                          className="w-full px-3 py-2 text-left text-sm font-semibold hover:bg-blue-50"
+                          style={{ color: "#41afeb", borderTop: "1px solid #f3f4f6" }}
+                        >
+                          + Register new external referrer…
+                        </button>
                       </div>
                     )}
                   </>
                 )}
               </div>
+
+              {showAddReferrer && (
+                <div className="rounded-xl p-4 space-y-3" style={{ background: "#f0f9ff", border: "1px solid #bae6fd" }}>
+                  <div>
+                    <p className="text-xs font-semibold" style={{ color: "#0369a1" }}>New External Referrer</p>
+                    <p className="text-xs mt-0.5" style={{ color: "#0369a1", opacity: 0.7 }}>Bearth team members and customers already appear in search above. Use this only for external referrers.</p>
+                  </div>
+                  {addReferrerError && <p className="text-xs" style={{ color: "#dc2626" }}>{addReferrerError}</p>}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: "#24315f" }}>First Name *</label>
+                      <input value={newReferrer.firstName} onChange={(e) => setNewReferrer((r) => ({ ...r, firstName: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ border: "1px solid #e5e7eb", color: "#111827" }} placeholder="First name" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: "#24315f" }}>Last Name</label>
+                      <input value={newReferrer.lastName} onChange={(e) => setNewReferrer((r) => ({ ...r, lastName: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ border: "1px solid #e5e7eb", color: "#111827" }} placeholder="Last name" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: "#24315f" }}>Phone</label>
+                      <input value={newReferrer.phone} onChange={(e) => setNewReferrer((r) => ({ ...r, phone: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ border: "1px solid #e5e7eb", color: "#111827" }} placeholder="Phone" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: "#24315f" }}>Email</label>
+                      <input type="email" value={newReferrer.email} onChange={(e) => setNewReferrer((r) => ({ ...r, email: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ border: "1px solid #e5e7eb", color: "#111827" }} placeholder="Email" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button type="button" onClick={() => { setShowAddReferrer(false); setAddReferrerError(null); }}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg" style={{ border: "1px solid #e5e7eb", color: "#6b7280" }}>Cancel</button>
+                    <button
+                      type="button"
+                      disabled={addingReferrer || !newReferrer.firstName.trim()}
+                      onClick={handleCreateReferrer}
+                      className="px-3 py-1.5 text-xs font-bold text-white rounded-lg"
+                      style={{ background: addingReferrer || !newReferrer.firstName.trim() ? "#9bafc5" : "#41afeb" }}
+                    >
+                      {addingReferrer ? "Creating…" : "Create & Select"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold mb-1" style={{ color: "#24315f" }}>Notes</label>
